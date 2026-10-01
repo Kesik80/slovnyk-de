@@ -5,8 +5,14 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>Wörter</title>
 <meta name="theme-color" content="#161A22">
-<link rel="manifest" href="manifest.json">
-<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="manifest" href="/icons/manifest.json">
+<link rel="icon" href="/icons/favicon.ico" sizes="32x32">
+<link rel="apple-touch-icon" href="/icons/icon-180x180.png">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Wörter">
+<meta name="application-name" content="Wörter">
 <style>
 :root{--bg:#F6F4EE;--sf:#FFFFFF;--sf2:#EEEBE2;--tx:#232833;--mu:#6B7280;--ac:#9A7B1C;--acx:#FFFFFF;--bd:#DDD8CB;--ok:#3F8F5A;--wa:#B9791F;--er:#C0504D;--sh:0 2px 10px rgba(0,0,0,.08)}
 :root[data-eff="dark"]{--bg:#161A22;--sf:#1E232D;--sf2:#262C38;--tx:#C9D0DE;--mu:#8C95A6;--ac:#C7A94F;--acx:#161A22;--bd:#2E3543;--ok:#6DB88A;--wa:#D9A24A;--er:#D97A77;--sh:0 2px 12px rgba(0,0,0,.4)}
@@ -739,8 +745,16 @@ async function renderMore(){
    '<div class="card"><h3>Статистика</h3><div class="st">'+rows.map(r=>'<span>'+r[0]+'</span><span>'+r[1]+'</span>').join('')+'</div><div class="chart">'+chartSvg(st.days)+'</div><div class="hint">Повторения за последние 14 дней</div></div>'+
    '<div class="card"><h3>Резервная копия проекта</h3><div class="bar"><button data-act="bkp">⬇ Скачать копию</button><button data-act="rst">⬆ Восстановить</button></div><div class="hint">Слова, прогресс, журнал и озвучка — одним файлом .json.</div></div>'+
    '<div class="card"><h3>Опасная зона</h3><div class="bar"><button class="dng" data-act="wipe">Удалить все данные</button></div></div>'+
+   '<div class="card" data-pwa-card><h3>Приложение</h3><button class="pri" data-pwa-install style="width:100%">📲 Установить на телефон</button><div class="hint" id="pwaHint"></div></div>'+
    '<div class="hint" style="text-align:center">Wörter v2</div>';
   renderEl();
+  try{
+    const inst=window.PWA&&PWA.installed();
+    const h=$('#pwaHint');
+    if(h) h.textContent=inst?'Установлено: приложение запущено с главного экрана.':'Если кнопки нет: меню браузера ⋮ → «Установить приложение» / «Добавить на главный экран».';
+    if(inst){const c=document.querySelector('[data-pwa-card]');if(c)c.querySelector('button').remove();}
+    else if(window.PWA) PWA.sync();
+  }catch(e){}
 }
 
 /* ---------- импорт / экспорт ---------- */
@@ -1352,9 +1366,11 @@ $('#fCsv').addEventListener('change',e=>{const f=e.target.files[0];e.target.valu
   }catch(e){fail(e);}
   render();
   handleHash();
-  if('serviceWorker' in navigator&&/^https?:/.test(location.protocol)) navigator.serviceWorker.register('sw.js').catch(()=>{});
+  // чистим кэши старого sw.js; новым service worker управляет pwa.js
+  if(window.caches) caches.keys().then(ks=>ks.filter(k=>/^woerter-v/.test(k)).forEach(k=>caches.delete(k))).catch(()=>{});
 })();
 </script>
+<script src="/pwa.js"></script>
 <script src="console.js"></script>
 </body>
 </html>
