@@ -906,6 +906,12 @@ function applyFill(w,f,overwrite){
     const nw=buildRich(p.text.trim()||str(f.conj).trim(),fromGrid(grid));
     if(nw!==w.conj){w.conj=nw;n++;}
   }
+  // глагол: тема «правильные / неправильные» + «глаголы», если тема не задана
+  if(f.pos==='verb'&&!str(w.theme).trim()){
+    w.theme=f.irr?'неправильные':'правильные';n++;
+    if(!str(w.sub).trim()) w.sub='глаголы';
+    w.ord=newOrd(w.theme,w.sub);
+  }
   const fw=str(f.word).trim(), ow=str(w.word).trim();
   if(fw&&CYR.test(ow)&&!CYR.test(fw)){                 // слово введено по-русски → немецкое слово из ответа
     if(w.sound===audioName(ow)||w.sound==='word.mp3') w.sound='';
