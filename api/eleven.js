@@ -4,7 +4,7 @@
 // Действия (POST, заголовок x-ozv-pass):
 //   {a:'keys'}                          — остаток символов по аккаунтам
 //   {a:'voices', key:0}                 — голоса аккаунта
-//   {a:'tts', text, voice, key, pin, model, lang, speed}  — mp3 (audio/mpeg), номер аккаунта в заголовке X-Key
+//   {a:'tts', text, voice, key, pin, model, lang, speed, stability, similarity, style, seed}  — mp3 (audio/mpeg), номер аккаунта в заголовке X-Key
 const BASE = 'https://api.elevenlabs.io';
 
 // запрос с таймаутом: без него зависший провайдер съедает все 60 секунд функции
@@ -89,7 +89,7 @@ module.exports = async function handler(req, res) {
         if (!r.ok) { const e = await errOf(r); return send(res, 502, { error: e.msg + ' (нужно право Voices → Read у ключа)', code: e.code }); }
         const j = await r.json();
         const voices = (j.voices || []).map(v => ({ id: v.voice_id, name: v.name, cat: v.category || 'premade',
-          labels: v.labels || {}, preview: v.preview_url || null }));
+          labels: v.labels || {}, preview: v.preview_url || null, desc: v.description || '' }));
         return send(res, 200, { voices, key: i });
       }
 
@@ -98,16 +98,20 @@ module.exports = async function handler(req, res) {
         if (text.length > 600) return send(res, 400, { error: 'Текст длиннее 600 символов', code: 'too_long' });
         if (!text.trim()) return send(res, 400, { error: 'Пустой текст', code: 'empty' });
         if (!/^[A-Za-z0-9]{15,40}$/.test(String(b.voice || ''))) return send(res, 400, { error: 'Неверный голос', code: 'voice' });
-        const MODELS = ['eleven_v3', 'eleven_multilingual_v2', 'eleven_flash_v2_5'];
+        const MODELS = ['eleven_v4', 'eleven_v4_turbo', 'eleven_v3', 'eleven_multilingual_v2', 'eleven_flash_v2_5'];
         const model = MODELS.includes(b.model) ? b.model : 'eleven_multilingual_v2';
         const num = (v, lo, hi, d) => { const n = parseFloat(v); return Number.isFinite(n) ? Math.min(hi, Math.max(lo, n)) : d; };
-        const v3 = model === 'eleven_v3';
-        const vs = { stability: v3 ? 0.5 : num(b.stability, 0, 1, 0.5), similarity_boost: num(b.similarity, 0, 1, 0.75) };
-        if (!v3) { vs.style = 0; vs.use_speaker_boost = true; }
+        const v3 = model === 'eleven_v3', v4 = model.indexOf('eleven_v4') === 0;
+        // v3 понимает только 0 / 0.5 / 1; v4 — только ровность и похожесть
+        const stab = num(b.stability, 0, 1, 0.5);
+        const vs = { stability: v3 ? (stab < 0.25 ? 0 : stab < 0.75 ? 0.5 : 1) : stab, similarity_boost: num(b.similarity, 0, 1, 0.75) };
+        if (!v3 && !v4) { vs.style = num(b.style, 0, 1, 0); vs.use_speaker_boost = true; }
         const speed = num(b.speed, 0.7, 1.2, 1);
-        if (speed !== 1 && !v3) vs.speed = speed;
+        if (speed !== 1 && !v3 && !v4) vs.speed = speed;
         const body = { text, model_id: model, voice_settings: vs };
-        if (v3 || model === 'eleven_flash_v2_5') body.language_code = String(b.lang || 'de').slice(0, 5);
+        const sd = parseInt(b.seed, 10);
+        if (Number.isFinite(sd) && sd >= 0) body.seed = Math.min(4294967295, sd);
+        if (v3 || v4 || model === 'eleven_flash_v2_5') body.language_code = String(b.lang || 'de').slice(0, 5);
         // начинаем с выбранного аккаунта; свой голос живёт только на своём — его не перекидываем
         const start = keyAt(b.key) ? b.key : 0;
         const order = b.pin ? [start] : K.map((_, n) => (start + n) % K.length);
