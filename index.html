@@ -737,13 +737,13 @@ async function renderMore(){
   const miss=ws.filter(w=>str(w.word).trim()&&['tr','ex','def','ipa'].some(k=>!str(w[k]).trim())).length;
   if(S.tab!=='more') return;
   view.innerHTML=
-   '<div class="card"><h3>Словарь Word Theme Pro (.xlsx)</h3><div class="bar"><button data-act="imp">⬆ Импорт</button><button data-act="exp">⬇ Экспорт</button></div><div class="bar"><button data-act="expZip">⬇ Экспорт .zip с озвучкой</button></div><div class="hint">В колонку «Звук» пишется имя mp3-файла; сами файлы лежат в папке audio внутри .zip.</div></div>'+
+   '<div class="card"><h3>Словарь Word Theme Pro (.xlsx)</h3><div class="bar"><button data-act="imp">⬇ Импорт</button><button data-act="exp">⬆ Экспорт</button></div><div class="bar"><button data-act="expZip">⬆ Экспорт .zip с озвучкой</button></div><div class="hint">В колонку «Звук» пишется имя mp3-файла; сами файлы лежат в папке audio внутри .zip.</div></div>'+
    '<div class="card"><h3>✨ Gemini</h3><div class="bar"><button data-act="fillAll">✨ Дозаполнить пустые поля</button></div><div class="hint">Слов с пустыми полями: '+miss+'. Заполненное не перезаписывается. Для одного слова — кнопка ✨ в карточке, для списка — «＋ Списком».</div></div>'+
    '<div class="card"><h3>Озвучка (ElevenLabs)</h3><div id="elBox"></div></div>'+
-   '<div class="card"><h3>Мост с «Озвучкой»</h3><div class="bar"><button data-act="impOzv">⬆ Файл из «Озвучки» (.csv)</button></div><div class="hint">Берутся слова из выгрузки «учу» (слова со статусом «знаю» пропускаются), попадают в тему «Озвучка». Ссылка вида …/#import=[&quot;слово&quot;,…] тоже работает.</div></div>'+
+   '<div class="card"><h3>Мост с «Озвучкой»</h3><div class="bar"><button data-act="impOzv">⬇ Файл из «Озвучки» (.csv)</button></div><div class="hint">Берутся слова из выгрузки «учу» (слова со статусом «знаю» пропускаются), попадают в тему «Озвучка». Ссылка вида …/#import=[&quot;слово&quot;,…] тоже работает.</div></div>'+
    '<div class="card"><h3>Повторение</h3><div class="sw"><span>Новых слов в день</span><input type="number" min="0" max="500" id="nl" value="'+limitNew()+'"></div><div class="hint" style="margin-top:6px">Считается отдельно для каждого направления.</div></div>'+
    '<div class="card"><h3>Статистика</h3><div class="st">'+rows.map(r=>'<span>'+r[0]+'</span><span>'+r[1]+'</span>').join('')+'</div><div class="chart">'+chartSvg(st.days)+'</div><div class="hint">Повторения за последние 14 дней</div></div>'+
-   '<div class="card"><h3>Резервная копия проекта</h3><div class="bar"><button data-act="bkp">⬇ Скачать копию</button><button data-act="rst">⬆ Восстановить</button></div><div class="hint">Слова, прогресс, журнал и озвучка — одним файлом .json.</div></div>'+
+   '<div class="card"><h3>Резервная копия проекта</h3><div class="bar"><button data-act="bkp">⬆ Скачать копию</button><button data-act="rst">⬇ Восстановить</button></div><div class="hint">Слова, прогресс, журнал и озвучка — одним файлом .json.</div></div>'+
    '<div class="card"><h3>Опасная зона</h3><div class="bar"><button class="dng" data-act="wipe">Удалить все данные</button></div></div>'+
    '<div class="card" data-pwa-card><h3>Приложение</h3><button class="pri" data-pwa-install style="width:100%">📲 Установить на телефон</button><div class="hint" id="pwaHint"></div></div>'+
    '<div class="hint" style="text-align:center">Wörter v2</div>';
