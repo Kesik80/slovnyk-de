@@ -527,7 +527,7 @@ function richView(s,spk){
     h+='<div class="cjw"><table class="cj" lang="de"><tr><th></th>'+g.cols.map(c=>'<th>'+esc(c.title)+'</th>').join('')+'</tr>';
     for(let i=0;i<n;i++) h+='<tr><td class="pn">'+esc(g.lead[i])+'</td>'+g.cols.map(c=>'<td>'+esc(c.cells[i])+'</td>').join('')+'</tr>';
     h+='</table></div>';
-  } else p.blocks.forEach(b=>{
+  } else p.blocks.filter(b=>b.rows.some(r=>r.some(c=>str(c).trim()))).forEach(b=>{
     h+='<div class="cjw"><table class="cj" lang="de">'+(b.title?'<tr><th colspan="'+Math.max(2,...b.rows.map(r=>r.length))+'">'+esc(b.title)+'</th></tr>':'')+
       b.rows.map(r=>'<tr>'+r.map(c=>'<td>'+esc(c)+'</td>').join('')+'</tr>').join('')+'</table></div>';
   });
@@ -588,7 +588,7 @@ function drawRich(k){
     });
     h+='</table><div class="tbf"><button class="sm" data-act="rAdd" data-rk="'+k+'" data-b="'+bi+'">+ строка</button><button class="sm" data-act="cAdd" data-rk="'+k+'" data-b="'+bi+'">+ колонка</button><button class="sm" data-act="cDel" data-rk="'+k+'" data-b="'+bi+'">− колонка</button></div></div>';
   });
-  h+='<div class="tba"><button class="sm" data-act="bAdd" data-rk="'+k+'" data-t="Präsens">+ Präsens</button><button class="sm" data-act="bAdd" data-rk="'+k+'" data-t="Präteritum">+ Präteritum</button><button class="sm" data-act="bAdd" data-rk="'+k+'" data-t="">+ таблица</button></div>';
+  h+='<div class="tba">'+(k==='conj'?'<button class="sm" data-act="bAdd" data-rk="'+k+'" data-t="Präsens">+ Präsens</button><button class="sm" data-act="bAdd" data-rk="'+k+'" data-t="Präteritum">+ Präteritum</button>':'')+'<button class="sm" data-act="bAdd" data-rk="'+k+'" data-t="">+ таблица</button></div>';
   host.innerHTML=h;
 }
 function commitRich(k){
