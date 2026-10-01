@@ -889,10 +889,22 @@ function progress(title){
 }
 
 /* ---- Gemini: автозаполнение ---- */
+function convIncomplete(w){
+  const p=parseRich(w.conj),g=toGrid(p.blocks);
+  if(!p.text.trim()&&!p.blocks.length) return false;      // не глагол или пусто: таблицу не навязываем
+  return !g||g.cols.length<3||g.lead.length<6||g.cols.some(c=>c.cells.some(x=>!str(x).trim()));
+}
 function applyFill(w,f,overwrite){
   let n=0;
   const set=(k,v)=>{v=str(v).trim();if(!v)return;if(overwrite||!str(w[k]).trim()){if(w[k]!==v){w[k]=v;n++;}}};
   ['tr','conj','decl','ex','def','ipa'].forEach(k=>set(k,f[k]));
+  // таблица Präsens / Präteritum / Perfekt: заполняем, если её нет или она неполная
+  if([f.pres,f.prat,f.perf].every(a=>Array.isArray(a)&&a.length===6)&&(overwrite||convIncomplete(w))){
+    const p=parseRich(w.conj);
+    const grid={lead:PRON.slice(0,6),cols:[['Präsens',f.pres],['Präteritum',f.prat],['Perfekt',f.perf]].map(c=>({title:c[0],cells:c[1].map(str)}))};
+    const nw=buildRich(p.text.trim()||str(f.conj).trim(),fromGrid(grid));
+    if(nw!==w.conj){w.conj=nw;n++;}
+  }
   const fw=str(f.word).trim(), ow=str(w.word).trim();
   if(fw&&normAns(fw)!==normAns(ow)&&stripArt(normAns(fw))===stripArt(normAns(ow))&&!/^(der|die|das)\s/i.test(ow)){w.word=fw;n++;}
   return n;
@@ -1221,7 +1233,7 @@ const ACT={
     if(!str(w.word).trim()){toast('Сначала введите слово');return;}
     touchEd();
     let over=false;
-    if(!['tr','conj','decl','ex','def','ipa'].some(k=>!str(w[k]).trim())){
+    if(!['tr','conj','decl','ex','def','ipa'].some(k=>!str(w[k]).trim())&&!convIncomplete(w)){
       over=await ask('Все поля уже заполнены. Перезаписать ответом Gemini?',[{t:'Перезаписать',v:true,cls:'dng'},{t:'Отмена',v:false}]);
       if(!over) return;
     }

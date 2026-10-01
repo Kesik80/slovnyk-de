@@ -29,8 +29,11 @@ const SCHEMA = {
       word: { type: 'STRING' }, tr: { type: 'STRING' }, pos: { type: 'STRING' },
       conj: { type: 'STRING' }, decl: { type: 'STRING' }, ex: { type: 'STRING' },
       def: { type: 'STRING' }, ipa: { type: 'STRING' },
+      pres: { type: 'ARRAY', items: { type: 'STRING' } },
+      prat: { type: 'ARRAY', items: { type: 'STRING' } },
+      perf: { type: 'ARRAY', items: { type: 'STRING' } },
     },
-    required: ['word', 'tr', 'pos', 'conj', 'decl', 'ex', 'def', 'ipa'],
+    required: ['word', 'tr', 'pos', 'conj', 'decl', 'ex', 'def', 'ipa', 'pres', 'prat', 'perf'],
   },
 };
 
@@ -75,6 +78,7 @@ function buildPrompt(items) {
     '- "tr": Russian translation: the one to three most common meanings separated by commas; verbs in the Russian infinitive; no explanations, no brackets. If the item has a non-empty "tr", keep it exactly as given.\n' +
     '- "pos": "noun", "verb", "adj" or "other".\n' +
     '- "conj": VERBS ONLY: the three principal forms separated by " · ": 3rd person singular present, 3rd person singular Präteritum, Perfekt with the auxiliary. Example: "hat · hatte · hat gehabt", "geht · ging · ist gegangen". Empty string for other words.\n' +
+    '- "pres", "prat", "perf": VERBS ONLY: full conjugation tables as arrays of EXACTLY 6 strings, in the order ich, du, er/sie/es, wir, ihr, sie/Sie. Each string is ONLY the verb form WITHOUT the pronoun. "pres" = Präsens ("habe", "hast", "hat", "haben", "habt", "haben"); separable verbs put the prefix last ("stehe auf"); reflexive verbs include the pronoun ("freue mich", "freust dich", "freut sich", "freuen uns", "freut euch", "freuen sich"). "prat" = Präteritum ("hatte", "hattest", "hatte", "hatten", "hattet", "hatten"). "perf" = Perfekt with the correct auxiliary haben/sein and Partizip II ("habe gehabt", "hast gehabt", "hat gehabt", "haben gehabt", "habt gehabt", "haben gehabt"; "bin gewesen", "bist gewesen", "ist gewesen", "sind gewesen", "seid gewesen", "sind gewesen"). For modal and irregular verbs use the real forms. For all non-verbs return three empty arrays [].\n' +
     '- "decl": NOUNS: nominative singular, genitive singular, nominative plural separated by " · ", e.g. "der Tisch · des Tisches · die Tische". ADJECTIVES: positive · comparative · superlative, e.g. "schnell · schneller · am schnellsten". Empty string for others.\n' +
     '- "ex": exactly two short natural example sentences in German (A2–B1), each followed by " — " and its Russian translation, the two lines separated by a newline character.\n' +
     '- "def": one short simple definition in German, at most 12 words.\n' +
@@ -82,6 +86,11 @@ function buildPrompt(items) {
     'If an item is not a German word, still fill every field as well as possible. Return only the JSON array. Items: ' + JSON.stringify(items);
 }
 
+// таблица глагола: ровно 6 непустых форм или пустой массив
+const forms = a => {
+  const r = (Array.isArray(a) ? a : []).map(v => clamp(v, 40));
+  return r.length === 6 && r.every(Boolean) ? r : [];
+};
 const clamp = (v, n) => String(v == null ? '' : v).replace(/\r/g, '').trim().slice(0, n);
 
 module.exports = async function handler(req, res) {
@@ -134,6 +143,7 @@ module.exports = async function handler(req, res) {
               pos: pos.includes(p) ? p : 'other',
               conj: clamp(x.conj, 120), decl: clamp(x.decl, 120),
               ex: clamp(x.ex, 400), def: clamp(x.def, 200), ipa: clamp(x.ipa, 60),
+              pres: forms(x.pres), prat: forms(x.prat), perf: forms(x.perf),
             };
           });
           return res.status(200).json({ items: result, model, tried });
