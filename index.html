@@ -83,6 +83,14 @@ table.cj td{padding:3px 8px;white-space:nowrap}
 .tb td{padding:2px}
 .tb td input{min-height:38px;padding:6px 8px}
 .tb td.x{width:42px}
+.gw{overflow-x:auto;margin:8px 0;border:1px solid var(--bd);border-radius:12px;background:var(--sf);padding:6px}
+table.gt{border-collapse:collapse}
+table.gt th,table.gt td{padding:2px}
+table.gt input{min-width:96px;width:96px;min-height:38px;padding:6px 8px}
+table.gt input.pn{min-width:64px;width:64px}
+table.gt th input{color:var(--ac);font-weight:600}
+table.gt td.x{width:42px}
+table.cj td.pn{color:var(--mu)}
 .tbf,.tba{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
 .dlg{position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:40;display:flex;align-items:center;justify-content:center;padding:20px}
 .dlg>div{background:var(--sf);border:1px solid var(--bd);border-radius:14px;padding:18px;max-width:420px;width:100%}
@@ -211,6 +219,32 @@ function buildRich(text,blocks){
   text=str(text).trim();
   const body=serBlocks(blocks), tbl=body?'[!'+body+'!]':'';
   return text&&tbl?text+'\n'+tbl:(text||tbl);
+}
+
+/* ---- таблица спряжения как сетка: местоимения | Präsens | Präteritum | Perfekt ---- */
+const PRON_RX=/^(ich|du|er|sie|es|wir|ihr|er\/sie\/es|er\/sie|sie\/Sie)$/i;
+function toGrid(blocks){
+  if(blocks.some(b=>b.rows.some(r=>r.length>2))) return null;   // обычные многоколоночные таблицы не трогаем
+  let lead=null; const cols=[];
+  blocks.forEach(b=>{
+    const two=b.rows.some(r=>r.length>=2);
+    if(two){ if(!lead) lead=b.rows.map(r=>str(r[0])); cols.push({title:b.title,cells:b.rows.map(r=>str(r[1]))}); return; }
+    let items=b.rows.map(r=>str(r[0]));
+    if(b.title&&PRON_RX.test(b.title.trim())) items=[b.title].concat(items);
+    const all=items.filter(x=>x.trim()!=='');
+    if(!lead&&!cols.length&&all.length>1&&all.every(x=>PRON_RX.test(x.trim()))){ lead=items; return; }
+    cols.push({title:b.title,cells:items});
+  });
+  lead=lead||[];
+  const n=Math.max(lead.length,...cols.map(c=>c.cells.length),0);
+  while(lead.length<n) lead.push('');
+  cols.forEach(c=>{while(c.cells.length<n)c.cells.push('');});
+  return {lead,cols};
+}
+function fromGrid(g){
+  const n=g.lead.length;
+  if(!g.cols.length) return n?[{title:'',rows:g.lead.map(x=>[x,''])}]:[];
+  return g.cols.map(c=>({title:c.title,rows:g.lead.map((x,i)=>[x,c.cells[i]||''])}));
 }
 
 /* ---- xlsx <-> модель ---- */
@@ -487,13 +521,16 @@ function renderList(){
 function richView(s,spk){
   const p=parseRich(s); let h='';
   if(p.text) h+=spk?'<div class="rt sprow" lang="de"><span>'+esc(p.text)+'</span><button class="ic sp" data-act="playConj" aria-label="Озвучить">🔊</button></div>':'<div class="rt" lang="de">'+esc(p.text)+'</div>';
-  const bl=p.blocks.filter(b=>b.rows.length||b.title);
-  if(bl.length){
-    const n=Math.max(...bl.map(b=>b.rows.length));
-    h+='<div class="cjw"><table class="cj" lang="de"><tr>'+bl.map(b=>'<th>'+esc(b.title||'')+'</th>').join('')+'</tr>';
-    for(let i=0;i<n;i++) h+='<tr>'+bl.map(b=>'<td>'+(b.rows[i]?esc(b.rows[i].filter(x=>str(x).trim()).join(' ')):'')+'</td>').join('')+'</tr>';
+  const g=toGrid(p.blocks);
+  if(g&&g.cols.length){
+    const n=g.lead.length;
+    h+='<div class="cjw"><table class="cj" lang="de"><tr><th></th>'+g.cols.map(c=>'<th>'+esc(c.title)+'</th>').join('')+'</tr>';
+    for(let i=0;i<n;i++) h+='<tr><td class="pn">'+esc(g.lead[i])+'</td>'+g.cols.map(c=>'<td>'+esc(c.cells[i])+'</td>').join('')+'</tr>';
     h+='</table></div>';
-  }
+  } else p.blocks.forEach(b=>{
+    h+='<div class="cjw"><table class="cj" lang="de">'+(b.title?'<tr><th colspan="'+Math.max(2,...b.rows.map(r=>r.length))+'">'+esc(b.title)+'</th></tr>':'')+
+      b.rows.map(r=>'<tr>'+r.map(c=>'<td>'+esc(c)+'</td>').join('')+'</tr>').join('')+'</table></div>';
+  });
   return h;
 }
 
@@ -504,7 +541,7 @@ function openEditor(id,preset){
   let w=id&&S.words.find(x=>x.id===id), isNew=!w;
   if(!w) w=blankWord(Object.assign({theme:S.fTheme,sub:S.fSub},preset));
   S.ed={w,saved:!isNew,rich:{}};
-  ['conj','decl'].forEach(k=>{const p=parseRich(w[k]);S.ed.rich[k]={text:p.text,blocks:p.blocks,touched:false};});
+  ['conj','decl'].forEach(k=>{const p=parseRich(w[k]);S.ed.rich[k]={text:p.text,blocks:p.blocks,touched:false,grid:k==='conj'?toGrid(p.blocks):null};});
   const themes=[...new Set(S.words.map(x=>x.theme))].filter(Boolean), subs=[...new Set(realWords().map(x=>x.sub))].filter(Boolean);
   let h='<div class="mh"><button data-act="edClose">← Готово</button><h2>'+(isNew?'Новое слово':'Карточка')+'</h2>'+(isNew?'':'<button class="ic dng" data-act="edDel">🗑</button>')+'</div>';
   const inp=(k,t)=>'<label class="lab">'+LABELS[k]+'</label><input data-k="'+k+'" '+(t||'')+' value="'+esc(w[k])+'" autocomplete="off" autocapitalize="off" spellcheck="false">';
@@ -531,6 +568,17 @@ function drawRich(k){
   const host=document.querySelector('[data-rich="'+k+'"]'); if(!host) return;
   const R=S.ed.rich[k];
   let h='<textarea data-rk="'+k+'" data-role="text" rows="2" lang="de" placeholder="'+(k==='conj'?'Краткая форма, напр. hat · hatte · hat gehabt':'Текст')+'">'+esc(R.text)+'</textarea>';
+  if(R.grid){
+    const g=R.grid,n=g.lead.length;
+    h+='<div class="gw"><table class="gt"><tr><th></th>'+g.cols.map((c,ci)=>'<th><input data-rk="'+k+'" data-role="gh" data-c="'+ci+'" value="'+esc(c.title)+'" placeholder="Präsens" lang="de" autocapitalize="off"></th>').join('')+'<th></th></tr>';
+    for(let i=0;i<n;i++){
+      h+='<tr><td><input class="pn" data-rk="'+k+'" data-role="gl" data-r="'+i+'" value="'+esc(g.lead[i])+'" lang="de" autocapitalize="off" autocomplete="off"></td>'+
+        g.cols.map((c,ci)=>'<td><input data-rk="'+k+'" data-role="gc" data-r="'+i+'" data-c="'+ci+'" value="'+esc(c.cells[i])+'" lang="de" autocapitalize="off" autocomplete="off"></td>').join('')+
+        '<td class="x"><button class="ic sm" data-act="gRowDel" data-rk="'+k+'" data-r="'+i+'" aria-label="Удалить строку">−</button></td></tr>';
+    }
+    h+='</table></div><div class="tbf"><button class="sm" data-act="gRow" data-rk="'+k+'">+ строка</button><button class="sm" data-act="gCol" data-rk="'+k+'" data-t="Präsens">+ Präsens</button><button class="sm" data-act="gCol" data-rk="'+k+'" data-t="Präteritum">+ Präteritum</button><button class="sm" data-act="gCol" data-rk="'+k+'" data-t="Perfekt">+ Perfekt</button><button class="sm" data-act="gCol" data-rk="'+k+'" data-t="">+ колонка</button><button class="sm dng" data-act="gColDel" data-rk="'+k+'">− колонка</button></div>';
+    host.innerHTML=h;return;
+  }
   R.blocks.forEach((b,bi)=>{
     const cols=Math.max(2,...b.rows.map(r=>r.length));
     h+='<div class="tb"><div class="tbh"><input data-rk="'+k+'" data-role="title" data-b="'+bi+'" value="'+esc(b.title)+'" placeholder="Заголовок (напр. Präsens)" lang="de"><button class="ic dng sm" data-act="bDel" data-rk="'+k+'" data-b="'+bi+'">✕</button></div><table>';
@@ -545,6 +593,7 @@ function drawRich(k){
 }
 function commitRich(k){
   const R=S.ed.rich[k]; R.touched=true;
+  if(R.grid) R.blocks=fromGrid(R.grid);
   S.ed.w[k]=buildRich(R.text,R.blocks); touchEd();
 }
 function touchEd(){
@@ -1118,6 +1167,15 @@ const ACT={
     S.words=S.words.filter(x=>x.id!==w.id);pending.delete(w.id);await dbDel('words',w.id);await dbDel('audio',w.id);await dbDel('audio','c:'+w.id);audioMem.delete(w.id);audioMem.delete('c:'+w.id);S.ed=null;$('#modal').innerHTML='';if(S.rv)S.rv.cur=null;render();},
   async edReset(){const w=S.ed.w;const ok=await ask('Сбросить прогресс слова «'+w.word+'»?',[{t:'Сбросить',v:true,cls:'dng'},{t:'Отмена',v:false}]);if(!ok)return;
     w.srs={wt:newCard(),tw:newCard()};saveWord(w,true);openEditor(w.id);},
+  gRow(t){const g=S.ed.rich[t.dataset.rk].grid;g.lead.push('');g.cols.forEach(c=>c.cells.push(''));commitRich(t.dataset.rk);drawRich(t.dataset.rk);},
+  gRowDel(t){const g=S.ed.rich[t.dataset.rk].grid,i=+t.dataset.r;g.lead.splice(i,1);g.cols.forEach(c=>c.cells.splice(i,1));commitRich(t.dataset.rk);drawRich(t.dataset.rk);},
+  gCol(t){
+    const g=S.ed.rich[t.dataset.rk].grid;
+    if(!g.lead.length) g.lead=PRON.slice(0,6);
+    g.cols.push({title:t.dataset.t,cells:g.lead.map(()=>'')});
+    commitRich(t.dataset.rk);drawRich(t.dataset.rk);
+  },
+  gColDel(t){const g=S.ed.rich[t.dataset.rk].grid;if(g.cols.length)g.cols.pop();commitRich(t.dataset.rk);drawRich(t.dataset.rk);},
   bAdd(t){const R=S.ed.rich[t.dataset.rk],ti=t.dataset.t;R.blocks.push({title:ti,rows:ti?PRON.slice(0,6).map(p=>[p,'']):[['','']]});commitRich(t.dataset.rk);drawRich(t.dataset.rk);},
   bDel(t){S.ed.rich[t.dataset.rk].blocks.splice(+t.dataset.b,1);commitRich(t.dataset.rk);drawRich(t.dataset.rk);},
   rAdd(t){const b=S.ed.rich[t.dataset.rk].blocks[+t.dataset.b];b.rows.push(new Array(Math.max(2,...b.rows.map(r=>r.length))).fill(''));commitRich(t.dataset.rk);drawRich(t.dataset.rk);},
@@ -1240,6 +1298,9 @@ document.addEventListener('input',e=>{
     if(t.dataset.rk){
       const R=S.ed.rich[t.dataset.rk],role=t.dataset.role;
       if(role==='text')R.text=t.value;
+      else if(role==='gh')R.grid.cols[+t.dataset.c].title=t.value;
+      else if(role==='gl')R.grid.lead[+t.dataset.r]=t.value;
+      else if(role==='gc')R.grid.cols[+t.dataset.c].cells[+t.dataset.r]=t.value;
       else if(role==='title')R.blocks[+t.dataset.b].title=t.value;
       else if(role==='cell'){const b=R.blocks[+t.dataset.b],r=b.rows[+t.dataset.r];while(r.length<=+t.dataset.c)r.push('');r[+t.dataset.c]=t.value;}
       commitRich(t.dataset.rk);
