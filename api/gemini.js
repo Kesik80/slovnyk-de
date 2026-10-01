@@ -74,7 +74,7 @@ async function listModels(key) {
 function buildPrompt(items) {
   return 'You are a German–Russian dictionary for a learner (level A2–B1). The user writes in Russian.\n' +
     'For EACH item below return one object, same number of items and same order. Fields:\n' +
-    '- "word": dictionary form, corrected if there is a typo. Nouns in singular WITH article ("der Tisch"); verbs in the infinitive (a separable verb as one word: "aufstehen"); adjectives in the base form.\n' +
+    '- "word": ALWAYS German. If the item\'s "word" is written in Russian (Cyrillic), it is the MEANING: put the best matching German dictionary word here and put the given Russian word first in "tr" (then at most two close synonyms). Otherwise: dictionary form, corrected if there is a typo. Nouns in singular WITH article ("der Tisch"); verbs in the infinitive (a separable verb as one word: "aufstehen"); adjectives in the base form.\n' +
     '- "tr": Russian translation: the one to three most common meanings separated by commas; verbs in the Russian infinitive; no explanations, no brackets. If the item has a non-empty "tr", keep it exactly as given.\n' +
     '- "pos": "noun", "verb", "adj" or "other".\n' +
     '- "conj": VERBS ONLY: the three principal forms separated by " · ": 3rd person singular present, 3rd person singular Präteritum, Perfekt with the auxiliary. Example: "hat · hatte · hat gehabt", "geht · ging · ist gegangen". Empty string for other words.\n' +

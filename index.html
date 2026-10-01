@@ -889,6 +889,7 @@ function progress(title){
 }
 
 /* ---- Gemini: автозаполнение ---- */
+const CYR=/[а-яёіїєґ]/i;
 function convIncomplete(w){
   const p=parseRich(w.conj),g=toGrid(p.blocks);
   if(!p.text.trim()&&!p.blocks.length) return false;      // не глагол или пусто: таблицу не навязываем
@@ -906,7 +907,10 @@ function applyFill(w,f,overwrite){
     if(nw!==w.conj){w.conj=nw;n++;}
   }
   const fw=str(f.word).trim(), ow=str(w.word).trim();
-  if(fw&&normAns(fw)!==normAns(ow)&&stripArt(normAns(fw))===stripArt(normAns(ow))&&!/^(der|die|das)\s/i.test(ow)){w.word=fw;n++;}
+  if(fw&&CYR.test(ow)&&!CYR.test(fw)){                 // слово введено по-русски → немецкое слово из ответа
+    if(w.sound===audioName(ow)||w.sound==='word.mp3') w.sound='';
+    w.word=fw;n++;
+  } else if(fw&&normAns(fw)!==normAns(ow)&&stripArt(normAns(fw))===stripArt(normAns(ow))&&!/^(der|die|das)\s/i.test(ow)){w.word=fw;n++;}
   return n;
 }
 async function fillMany(list,onProg){
