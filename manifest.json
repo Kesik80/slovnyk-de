@@ -1,0 +1,13 @@
+{
+  "name": "Wörter",
+  "short_name": "Wörter",
+  "description": "Немецкий словарь с интервальным повторением",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#161A22",
+  "theme_color": "#161A22",
+  "icons": [
+    {"src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any"}
+  ]
+}
