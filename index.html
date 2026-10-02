@@ -343,10 +343,10 @@ function fmtNext(c,now){
 function normAns(s){return str(s).toLowerCase().replace(/\s+/g,' ').trim();}
 function stripArt(s){return s.replace(/^(der|die|das|ein|eine|einen|einem)\s+/,'');}
 function checkAnswer(typed,word){
-  const a=normAns(typed), b=normAns(word);
+  const a=normAns(typed), b=normAns(word), b0=b.split(',')[0].trim();   // «der Tisch, Tische» — достаточно ввести «der Tisch»
   if(!a) return 'none';
-  if(a===b) return 'ok';
-  if(stripArt(a)===stripArt(b)) return 'mid';
+  if(a===b||a===b0) return 'ok';
+  if(stripArt(a)===stripArt(b)||stripArt(a)===stripArt(b0)) return 'mid';
   return 'bad';
 }
 /* ---- CSV из «Озвучки», имена аудио, статистика ---- */
@@ -930,7 +930,12 @@ function applyFill(w,f,overwrite){
   if(fw&&CYR.test(ow)&&!CYR.test(fw)){                 // слово введено по-русски → немецкое слово из ответа
     if(w.sound===audioName(ow)||w.sound==='word.mp3') w.sound='';
     w.word=fw;n++;
-  } else if(fw&&normAns(fw)!==normAns(ow)&&stripArt(normAns(fw))===stripArt(normAns(ow))&&!/^(der|die|das)\s/i.test(ow)){w.word=fw;n++;}
+  } else if(fw&&normAns(fw)!==normAns(ow)){
+    const bs=x=>stripArt(normAns(x).split(',')[0].trim());
+    const noArt=!/^(der|die|das)\s/i.test(ow), noPl=ow.indexOf(',')<0&&fw.indexOf(',')>=0;
+    if(bs(fw)===bs(ow)&&(noArt||noPl)){w.word=fw;n++;}
+  }
+  w.fillFor=w.word;
   return n;
 }
 async function fillMany(list,onProg){
@@ -1257,7 +1262,13 @@ const ACT={
     if(!str(w.word).trim()){toast('Сначала введите слово');return;}
     touchEd();
     let over=false;
-    if(!['tr','conj','decl','ex','def','ipa'].some(k=>!str(w[k]).trim())&&!convIncomplete(w)){
+    const changed=w.fillFor&&normAns(w.fillFor)!==normAns(w.word);
+    if(changed){      // слово заменили после прошлого заполнения — старые данные не годятся
+      over=true;
+      ['tr','conj','decl','ex','def','ipa'].forEach(k=>{w[k]='';});
+      if(w.sound===audioName(w.fillFor)) w.sound='';
+      if(/^(правильные|неправильные)$/.test(str(w.theme))&&str(w.sub)==='глаголы'){w.theme='';w.sub='';}
+    } else if(!['tr','conj','decl','ex','def','ipa'].some(k=>!str(w[k]).trim())&&!convIncomplete(w)){
       over=await ask('Все поля уже заполнены. Перезаписать ответом Gemini?',[{t:'Перезаписать',v:true,cls:'dng'},{t:'Отмена',v:false}]);
       if(!over) return;
     }
