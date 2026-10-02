@@ -116,6 +116,7 @@ table.cj td.pn{color:var(--mu)}
 .chk{display:flex;gap:10px;align-items:center;margin:12px 0;font-size:15px}
 .chk input{width:22px;min-height:22px;height:22px;flex:0 0 22px}
 .bigplay{font-size:40px;min-height:84px;min-width:84px;border-radius:50%;padding:0}
+.front.sent{font-size:22px;line-height:1.35}
 .front.ls{display:flex;flex-direction:column;align-items:center;gap:10px}
 .chart{margin-top:10px}
 .sub{margin:16px 0 6px;font-weight:600}
@@ -350,7 +351,8 @@ function fmtNext(c,now){
 function normAns(s){return str(s).toLowerCase().replace(/\s+/g,' ').trim();}
 function stripArt(s){return s.replace(/^(der|die|das|ein|eine|einen|einem)\s+/,'');}
 function checkAnswer(typed,word){
-  const a=normAns(typed), b=normAns(word), b0=b.split(',')[0].trim();   // «der Tisch, Tische» — достаточно ввести «der Tisch»
+  const np=x=>x.replace(/[.,!?;:…"«»„“”'()]/g,'').replace(/\s+/g,' ').trim();
+  const a=np(normAns(typed)), b=np(normAns(word)), b0=np(normAns(word).split(',')[0]);   // «der Tisch, Tische» — достаточно ввести «der Tisch»
   if(!a) return 'none';
   if(a===b||a===b0) return 'ok';
   if(stripArt(a)===stripArt(b)||stripArt(a)===stripArt(b0)) return 'mid';
@@ -366,6 +368,15 @@ function parseWordList(text){
     // «der Tisch, Tische» — это одно слово с множественным числом, а не два слова
     if(parts.length===2&&/^(der|die|das)\s/i.test(parts[0])&&!/\s/.test(parts[1])&&!/^(der|die|das)$/i.test(parts[1])&&/^[A-ZÄÖÜ]/.test(parts[1])){out.push({word:parts[0]+', '+parts[1],tr:''});return;}
     parts.forEach(w=>out.push({word:w,tr:''}));
+  });
+  return out;
+}
+function parseSentList(text){
+  const out=[];
+  String(text||'').replace(/\r/g,'').split('\n').forEach(line=>{
+    line=line.trim(); if(!line) return;
+    const q=line.split(/\s*[;\t]\s*|\s+[—–]\s+/);
+    if(q[0].trim()) out.push({word:q[0].trim(),tr:(q[1]||'').trim()});
   });
   return out;
 }
@@ -685,7 +696,7 @@ function renderReview(){
   rv.cur=it;
   const w=it.w, wt=rv.mode==='wt';
   h+='<div class="card">';
-  if(wt) h+='<div class="front wd" lang="de"><span>'+esc(w.word)+'</span><button class="ic sp" data-act="play" aria-label="Озвучить">🔊</button></div>';
+  if(wt) h+='<div class="front wd'+(isSent(w)?' sent':'')+'" lang="de"><span>'+esc(w.word)+'</span><button class="ic sp" data-act="play" aria-label="Озвучить">🔊</button></div>';
   else if(rv.mode==='ls') h+='<div class="front ls"><button class="pri bigplay" data-act="play" aria-label="Послушать">🔊</button><span class="hint" style="font-size:14px;font-weight:400">Послушайте и введите слово</span></div>';
   else h+='<div class="front">'+esc(w.tr)+'</div>';
   if((rv.mode==='ty'||rv.mode==='ls')&&!rv.shown) h+='<input id="ans" lang="de" placeholder="Введите слово…" autocomplete="off" autocapitalize="off" spellcheck="false"><div class="bar" style="margin-top:10px"><button class="pri" data-act="check">Проверить</button></div>';
@@ -760,7 +771,7 @@ async function renderMore(){
   const st=calcStats(log,dayNum(Date.now()));
   const rows=[['Всего слов',ws.length],['Выучено (интервал ≥ 21 дн.)',mt],['На повторении',rv],['Изучаются',lr],['Новые',nw],
     ['Серия дней подряд',st.streak],['Повторений сегодня',st.today],['Повторений всего',st.total],['Верно за 30 дней',st.acc==null?'—':st.acc+'%']];
-  const miss=ws.filter(w=>str(w.word).trim()&&['tr','ex','def','ipa'].some(k=>!str(w[k]).trim())).length;
+  const miss=ws.filter(w=>str(w.word).trim()&&(isSent(w)?!str(w.tr).trim():['tr','ex','def','ipa'].some(k=>!str(w[k]).trim()))).length;
   if(S.tab!=='more') return;
   view.innerHTML=
    '<div class="card"><h3>Словарь Word Theme Pro (.xlsx)</h3><div class="bar"><button data-act="imp">⬇ Импорт</button><button data-act="exp">⬆ Экспорт</button></div><div class="bar"><button data-act="expZip">⬆ Экспорт .zip с озвучкой</button></div><div class="hint">В колонку «Звук» пишется имя mp3-файла; сами файлы лежат в папке audio внутри .zip.</div></div>'+
@@ -933,6 +944,18 @@ function progress(title){
 
 /* ---- Gemini: автозаполнение ---- */
 const CYR=/[а-яёіїєґ]/i;
+const isSent=w=>{if(w&&w.sent)return true;const t=str(w&&w.word).trim();return t.split(/\s+/).length>=4||/[.!?…]$/.test(t);};
+async function fillSentences(list){
+  const d=await callApi('gemini',{a:'sent',items:list.map(w=>({text:w.word,tr:w.tr}))});
+  list.forEach((w,k)=>{
+    const f=d.items&&d.items[k];if(!f) return;
+    const wasRu=CYR.test(w.word);
+    if(wasRu&&f.de){w.sound=w.sound===audioName(w.word)?'':w.sound;w.word=f.de;}
+    else if(f.de&&normAns(f.de)!==normAns(w.word)) w.word=f.de;
+    if(!str(w.tr).trim()||wasRu) w.tr=f.ru||w.tr;
+    w.fillFor=w.word;saveWord(w,true);
+  });
+}
 function convIncomplete(w){
   const p=parseRich(w.conj),g=toGrid(p.blocks);
   if(!p.text.trim()&&!p.blocks.length) return false;      // не глагол или пусто: таблицу не навязываем
@@ -973,8 +996,12 @@ async function fillMany(list,onProg){
   for(let i=0;i<list.length&&!S.stop;i+=10){
     const chunk=list.slice(i,i+10);
     try{
-      const d=await callApi('gemini',{a:'fill',items:chunk.map(w=>({word:w.word,tr:w.tr}))});
-      chunk.forEach((w,k)=>{if(d.items&&d.items[k]){applyFill(w,d.items[k],false);saveWord(w,true);}});
+      const ss=chunk.filter(isSent),ww=chunk.filter(w=>!isSent(w));
+      if(ss.length) await fillSentences(ss);
+      if(ww.length){
+        const d=await callApi('gemini',{a:'fill',items:ww.map(w=>({word:w.word,tr:w.tr}))});
+        ww.forEach((w,k)=>{if(d.items&&d.items[k]){applyFill(w,d.items[k],false);saveWord(w,true);}});
+      }
       done+=chunk.length;
     }catch(e){err=e;break;}
     if(onProg) onProg(done,list.length);
@@ -1259,9 +1286,11 @@ const ACT={
   undo(){undo();},
   rvEdit(){if(S.rv&&S.rv.cur)openEditor(S.rv.cur.w.id);},
   batch(){
+    S.bSent=false;
     const themes=[...new Set(S.words.map(x=>x.theme))].filter(Boolean),subs=[...new Set(realWords().map(x=>x.sub))].filter(Boolean);
     $('#modal').innerHTML='<div class="modal"><div class="mh"><button data-act="bClose">← Назад</button><h2>Добавить списком</h2></div>'+
-      '<label class="lab">Слова: через запятую или по одному в строке, можно «слово ; перевод»</label><textarea id="bTxt" rows="8" lang="de" autocapitalize="off" spellcheck="false"></textarea>'+
+      '<div class="seg" style="grid-template-columns:repeat(2,1fr);margin-top:10px"><button data-act="bMode" data-m="w" class="on" id="bMw">Слова</button><button data-act="bMode" data-m="s" id="bMs">Предложения</button></div>'+
+      '<label class="lab" id="bLab">Слова: через запятую или по одному в строке, можно «слово ; перевод»</label><textarea id="bTxt" rows="8" lang="de" autocapitalize="off" spellcheck="false"></textarea>'+
       '<div class="bar fix" style="margin-top:6px"><button class="sm" data-act="bFile">📄 Из файла (.txt, .csv)</button><button class="sm" data-act="bPhoto">📷 Фото списка</button><span class="hint" id="bCnt" style="align-self:center;margin-left:auto"></span></div>'+
       '<label class="lab">Тема</label><input id="bTheme" list="dlBT" value="'+esc(S.fTheme)+'" autocomplete="off"><datalist id="dlBT">'+themes.map(x=>'<option value="'+esc(x)+'">').join('')+'</datalist>'+
       '<label class="lab">Под Темой</label><input id="bSub" list="dlBS" value="'+esc(S.fSub)+'" autocomplete="off"><datalist id="dlBS">'+subs.map(x=>'<option value="'+esc(x)+'">').join('')+'</datalist>'+
@@ -1270,19 +1299,27 @@ const ACT={
       '<button class="pri" data-act="bGo" style="width:100%">Добавить</button></div>';
   },
   bClose(){$('#modal').innerHTML='';render();},
+  bMode(t){
+    const sent=t.dataset.m==='s';S.bSent=sent;
+    $('#bMw').classList.toggle('on',!sent);$('#bMs').classList.toggle('on',sent);
+    $('#bLab').textContent=sent?'Предложения: по одному в строке, можно «предложение ; перевод». Русские будут переведены на немецкий.':'Слова: через запятую или по одному в строке, можно «слово ; перевод»';
+    const th=$('#bTheme');if(sent&&!th.value.trim())th.value='Предложения';else if(!sent&&th.value==='Предложения')th.value='';
+    bCount();
+  },
   bFile(){$('#fTxt').click();},
   bPhoto(){$('#fImg').click();},
   async bGo(){
     const theme=$('#bTheme').value.trim(),sub=$('#bSub').value.trim(),tags=$('#bTags').value.trim(),ai=$('#bAi').checked;
-    const lines=parseWordList($('#bTxt').value);
-    if(!lines.length){toast('Введите слова');return;}
+    const lines=S.bSent?parseSentList($('#bTxt').value):parseWordList($('#bTxt').value);
+    if(!lines.length){toast('Введите '+(S.bSent?'предложения':'слова'));return;}
     const have=new Set(S.words.filter(w=>w.kind!=='h').map(keyOf)),added=[];
     lines.forEach(l=>{
       const w=blankWord({theme,sub,word:l.word,tr:l.tr,tags}),k=keyOf(w);
       if(have.has(k))return;have.add(k);
+      if(S.bSent) w.sent=true;
       w.ord=newOrd(theme,sub);S.words.push(w);added.push(w);
     });
-    if(!added.length){toast('Все эти слова уже есть');return;}
+    if(!added.length){toast('Всё это уже есть');return;}
     await dbPutMany('words',added);
     let msg='Добавлено: '+added.length;
     if(ai){const r=await runFill(added);msg+=r.err?'; Gemini: '+r.err.message+' (заполнено '+r.done+')':'; заполнено '+r.done;}
@@ -1293,6 +1330,14 @@ const ACT={
     const w=S.ed.w;
     if(!str(w.word).trim()){toast('Сначала введите слово');return;}
     touchEd();
+    if(isSent(w)){
+      t.textContent='…';t.disabled=true;
+      try{
+        const ru=CYR.test(w.word);
+        await fillSentences([w]);openEditor(w.id);toast(ru?'Переведено на немецкий':'Перевод добавлен');
+      }catch(e){t.textContent='✨';t.disabled=false;toast('Gemini: '+e.message);}
+      return;
+    }
     let over=false;
     const changed=w.fillFor&&normAns(w.fillFor)!==normAns(w.word);
     if(changed){      // слово заменили после прошлого заполнения — старые данные не годятся
@@ -1351,7 +1396,7 @@ const ACT={
   genAll(){genAll(false);},
   genRedo(){genAll(true);},
   async fillAll(){
-    const list=realWords().filter(w=>str(w.word).trim()&&['tr','ex','def','ipa'].some(k=>!str(w[k]).trim()));
+    const list=realWords().filter(w=>str(w.word).trim()&&(isSent(w)?!str(w.tr).trim():['tr','ex','def','ipa'].some(k=>!str(w[k]).trim())));
     if(!list.length){toast('Все поля уже заполнены');return;}
     const ok=await ask('Дозаполнить через Gemini пустые поля у слов: '+list.length+'? Заполненное не изменится.',[{t:'✨ Дозаполнить',v:true,cls:'pri'},{t:'Отмена',v:false}]);
     if(!ok) return;
@@ -1415,7 +1460,7 @@ $('#fTxt').addEventListener('change',async e=>{
     ta.value=(ta.value.trim()?ta.value.trim()+'\n':'')+csv.trim();bCount();toast('Слов в списке: '+parseWordList(ta.value).length);
   }catch(err){fail(err);}
 });
-function bCount(){const c=$('#bCnt'),ta=$('#bTxt');if(c&&ta){const n=parseWordList(ta.value).length;c.textContent=n?'слов: '+n:'';}}
+function bCount(){const c=$('#bCnt'),ta=$('#bTxt');if(c&&ta){const n=(S.bSent?parseSentList(ta.value):parseWordList(ta.value)).length;c.textContent=n?'слов: '+n:'';}}
 function shrinkImage(file,max){
   return new Promise((res,rej)=>{
     const img=new Image(),u=URL.createObjectURL(file);

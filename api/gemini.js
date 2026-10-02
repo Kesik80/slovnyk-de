@@ -38,6 +38,14 @@ const SCHEMA = {
   },
 };
 
+const SENT_SCHEMA = { type: 'ARRAY', items: { type: 'OBJECT', properties: { de: { type: 'STRING' }, ru: { type: 'STRING' } }, required: ['de', 'ru'] } };
+function sentPrompt(items) {
+  return 'You are a German–Russian helper for a learner (level A2–B1). The user writes in Russian.\n' +
+    'For EACH item below return one object {"de","ru"}, same number of items and same order.\n' +
+    '- If "text" is written in Russian (Cyrillic): "ru" = that text unchanged, "de" = a natural, simple, correct German translation (everyday spoken style).\n' +
+    '- If "text" is German: "de" = the same sentence with only spelling, capitalization and punctuation corrected (do not rephrase it), "ru" = the "tr" given in the item if it is not empty (keep it exactly), otherwise a natural Russian translation.\n' +
+    'Keep the sentence-ending punctuation. Return only the JSON array. Items: ' + JSON.stringify(items);
+}
 const SCAN_SCHEMA = { type: 'ARRAY', items: { type: 'OBJECT', properties: { word: { type: 'STRING' }, tr: { type: 'STRING' } }, required: ['word', 'tr'] } };
 function scanPrompt() {
   return 'The image is a photo or screenshot of a vocabulary list, textbook page or notes (German and/or Russian). Extract every vocabulary item you can read. ' +
@@ -118,11 +126,11 @@ module.exports = async function handler(req, res) {
 
   let b = req.body; if (typeof b === 'string') { try { b = JSON.parse(b); } catch (e) { b = {}; } }
   b = b || {};
-  const scan = b.a === 'scan';
-  if (b.a !== 'fill' && !scan) return res.status(400).json({ error: 'Неизвестное действие', code: 'action' });
+  const scan = b.a === 'scan', sent = b.a === 'sent';
+  if (b.a !== 'fill' && !scan && !sent) return res.status(400).json({ error: 'Неизвестное действие', code: 'action' });
   const items = (Array.isArray(b.items) ? b.items : []).slice(0, 15)
-    .map(x => ({ word: clamp(x && x.word, 60), tr: clamp(x && x.tr, 120) }))
-    .filter(x => x.word);
+    .map(x => sent ? { text: clamp(x && (x.text || x.word), 300), tr: clamp(x && x.tr, 300) } : { word: clamp(x && x.word, 60), tr: clamp(x && x.tr, 120) })
+    .filter(x => sent ? x.text : x.word);
   let img = null;
   if (scan) {
     const mime = String(b.mime || '');
@@ -131,7 +139,7 @@ module.exports = async function handler(req, res) {
     if (data.length > 4200000) return res.status(413).json({ error: 'Картинка слишком большая', code: 'too_big' });
     img = { mime, data };
   } else if (!items.length) return res.status(400).json({ error: 'Нет слов', code: 'empty' });
-  const prompt = scan ? scanPrompt() : buildPrompt(items);
+  const prompt = scan ? scanPrompt() : sent ? sentPrompt(items) : buildPrompt(items);
 
   const first = [process.env.MODEL_TEXT || process.env.GEMINI_MODEL || 'gemini-3.5-flash-lite', 'gemini-3.5-flash', 'gemini-2.5-flash', 'gemini-flash-latest']
     .filter((m, i, a2) => m && a2.indexOf(m) === i);
@@ -148,7 +156,11 @@ module.exports = async function handler(req, res) {
       for (let att = 0; att < 3; att++) {
         if (Date.now() - t0 > 48000) { last = last || new Error('Не хватило времени'); tried.push('время вышло'); keyDead = true; break; }
         try {
-          const out = await ask(key, model, prompt, simple, scan ? SCAN_SCHEMA : null, img);
+          const out = await ask(key, model, prompt, simple, scan ? SCAN_SCHEMA : sent ? SENT_SCHEMA : null, img);
+          if (sent) {
+            if (!Array.isArray(out) || out.length !== items.length) { last = new Error('Gemini вернул ' + (Array.isArray(out) ? out.length : 0) + ' предложений вместо ' + items.length); tried.push(model + ' → формат'); break; }
+            return res.status(200).json({ items: out.map((x, i) => ({ de: clamp(x && x.de, 300) || items[i].text, ru: items[i].tr || clamp(x && x.ru, 300) })), model, tried });
+          }
           if (scan) {
             if (!Array.isArray(out)) { last = new Error('Gemini не вернул список'); tried.push(model + ' → формат'); break; }
             const seen = new Set();
