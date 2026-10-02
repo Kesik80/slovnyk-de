@@ -686,7 +686,7 @@ function renderReview(){
     }
     h+='<div class="back">';
     if(wt) h+='<div class="big">'+esc(w.tr)+'</div>'; else h+='<div class="big wd" lang="de"><span>'+esc(w.word)+'</span><button class="ic sp" data-act="play" aria-label="Озвучить">🔊</button></div>'+(rv.mode==='ls'?'<div class="sub">'+esc(w.tr)+'</div>':'');
-    if(w.ipa||w.pron) h+='<div class="sub" lang="de">'+esc([w.ipa,w.pron].filter(Boolean).join('  '))+'</div>';
+    if(w.ipa||w.pron) h+='<div class="sub" lang="de">'+esc([w.ipa,w.pron].filter(Boolean).join(' — '))+'</div>';
     if(w.def) h+='<div class="rt" lang="de">'+esc(w.def)+'</div>';
     if(w.conj) h+=richView(w.conj,true);
     if(w.decl) h+=richView(w.decl);
@@ -930,7 +930,8 @@ function convIncomplete(w){
 function applyFill(w,f,overwrite){
   let n=0;
   const set=(k,v)=>{v=str(v).trim();if(!v)return;if(overwrite||!str(w[k]).trim()){if(w[k]!==v){w[k]=v;n++;}}};
-  ['tr','conj','decl','ex','def','ipa'].forEach(k=>set(k,f[k]));
+  ['tr','conj','decl','ex','def'].forEach(k=>set(k,f[k]));
+  set('ipa',f.ipa);
   // таблица Präsens / Präteritum / Perfekt: заполняем, если её нет или она неполная
   if([f.pres,f.prat,f.perf].every(a=>Array.isArray(a)&&a.length===6)&&(overwrite||convIncomplete(w))){
     const p=parseRich(w.conj);

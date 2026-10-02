@@ -91,7 +91,7 @@ function buildPrompt(items) {
     '- "decl": ADJECTIVES ONLY: positive · comparative · superlative, e.g. "schnell · schneller · am schnellsten". Empty string for nouns (the plural is already in "word"), verbs and everything else.\n' +
     '- "ex": exactly two short natural example sentences in German (A2–B1), each followed by " — " and its Russian translation, the two lines separated by a newline character.\n' +
     '- "def": one short simple definition in German, at most 12 words.\n' +
-    '- "ipa": IPA transcription of "word" in square brackets, e.g. "[tɪʃ]".\n' +
+    '- "ipa": IPA transcription of the German word (singular form only, without article and plural) in square brackets, with the stress mark ˈ and the length mark ː, non-syllabic marks on diphthongs are fine, ach-laut as χ, r as ʁ. Write unstressed -en/-el/-em endings as ən/əl/əm (not with the syllabic mark). Examples: "[ˈʁaʊ̯χən]", "[zaɪ̯n]", "[ˈhaːbən]", "[tɪʃ]".\n' +
     'If an item is not a German word, still fill every field as well as possible. Return only the JSON array. Items: ' + JSON.stringify(items);
 }
 
@@ -100,6 +100,10 @@ const forms = a => {
   const r = (Array.isArray(a) ? a : []).map(v => clamp(v, 40));
   return r.length === 6 && r.every(Boolean) ? r : [];
 };
+// слоговые согласные (n̩, l̩) → ən, əl: в остальном транскрипцию не трогаем
+function fixIpa(v) {
+  return String(v == null ? '' : v).normalize('NFC').replace(/([mnl])\u0329/g, (m, c) => 'ə' + c).trim();
+}
 const clamp = (v, n) => String(v == null ? '' : v).replace(/\r/g, '').trim().slice(0, n);
 
 module.exports = async function handler(req, res) {
@@ -166,7 +170,7 @@ module.exports = async function handler(req, res) {
               tr: items[i].tr || clamp(x.tr, 120),
               pos: pos.includes(p) ? p : 'other',
               conj: clamp(x.conj, 120), decl: clamp(x.decl, 120),
-              ex: clamp(x.ex, 400), def: clamp(x.def, 200), ipa: clamp(x.ipa, 60),
+              ex: clamp(x.ex, 400), def: clamp(x.def, 200), ipa: fixIpa(clamp(x.ipa, 60)),
               irr: x.irr === true, pres: forms(x.pres), prat: forms(x.prat), perf: forms(x.perf),
             };
           });
