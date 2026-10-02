@@ -167,7 +167,9 @@ details.more summary{cursor:pointer;color:var(--mu);padding:6px 0}
 <div id="modal"></div>
 <div id="dlgHost"></div>
 <div id="toast"></div>
-<input type="file" id="fXlsx" accept=".xlsx,.xls" hidden>
+<input type="file" id="fXlsx" accept=".xlsx,.xls" multiple hidden>
+<input type="file" id="fTxt" accept=".txt,.csv,.tsv,text/plain,text/csv" hidden>
+<input type="file" id="fImg" accept="image/*" hidden>
 <input type="file" id="fJson" accept=".json,application/json" hidden>
 <input type="file" id="fCsv" accept=".csv,text/csv,text/plain" hidden>
 
@@ -348,6 +350,19 @@ function checkAnswer(typed,word){
   if(a===b||a===b0) return 'ok';
   if(stripArt(a)===stripArt(b)||stripArt(a)===stripArt(b0)) return 'mid';
   return 'bad';
+}
+/* ---- список слов: через новую строку или запятую; «слово ; перевод» ---- */
+function parseWordList(text){
+  const out=[];
+  String(text||'').replace(/\r/g,'').split('\n').forEach(line=>{
+    line=line.trim(); if(!line) return;
+    if(/[;\t]/.test(line)){const q=line.split(/\s*[;\t]\s*/);if(q[0].trim())out.push({word:q[0].trim(),tr:(q[1]||'').trim()});return;}
+    const parts=line.split(/\s*,\s*/).filter(Boolean);
+    // «der Tisch, Tische» — это одно слово с множественным числом, а не два слова
+    if(parts.length===2&&/^(der|die|das)\s/i.test(parts[0])&&!/\s/.test(parts[1])&&!/^(der|die|das)$/i.test(parts[1])&&/^[A-ZÄÖÜ]/.test(parts[1])){out.push({word:parts[0]+', '+parts[1],tr:''});return;}
+    parts.forEach(w=>out.push({word:w,tr:''}));
+  });
+  return out;
 }
 /* ---- CSV из «Озвучки», имена аудио, статистика ---- */
 function parseCsv(text){
@@ -759,7 +774,7 @@ async function renderMore(){
 
 /* ---------- импорт / экспорт ---------- */
 function needXlsx(){if(typeof XLSX==='undefined'){toast('Библиотека xlsx не загружена (нужен интернет при первом запуске)');return false;}return true;}
-async function doImport(file){
+async function doImport(file,forced,silent){
   if(!needXlsx()) return;
   try{
     const buf=await file.arrayBuffer();
@@ -770,7 +785,8 @@ async function doImport(file){
     if(!p.rows.length){toast('В файле нет строк');return;}
     const has=S.words.length>0;
     let mode='replace';
-    if(has){
+    if(has&&forced) mode=forced;
+    else if(has){
       mode=await ask('В файле '+p.rows.length+' строк. Что сделать?',[
         {t:'Слить (прогресс сохранится)',v:'merge',cls:'pri'},{t:'Заменить словарь (прогресс по совпавшим словам сохранится)',v:'replace'},{t:'Отмена',v:null}]);
       if(!mode) return;
@@ -796,8 +812,10 @@ async function doImport(file){
       await dbPutMany('words',touched);
     }
     const ex=S.meta.extraCols||[]; p.extraCols.forEach(c=>{if(!ex.includes(c))ex.push(c);}); await setMeta('extraCols',ex);
-    toast('Импорт: добавлено '+added+', обновлено '+upd+(p.migrated?'; форма перенесена в «Спряжение»: '+p.migrated:''));
+    const msg='Импорт: добавлено '+added+', обновлено '+upd+(p.migrated?'; форма перенесена в «Спряжение»: '+p.migrated:'');
     render();
+    if(silent) return msg;
+    toast(msg);
   }catch(e){fail(e);}
 }
 function buildXlsx(){
@@ -1231,7 +1249,8 @@ const ACT={
   batch(){
     const themes=[...new Set(S.words.map(x=>x.theme))].filter(Boolean),subs=[...new Set(realWords().map(x=>x.sub))].filter(Boolean);
     $('#modal').innerHTML='<div class="modal"><div class="mh"><button data-act="bClose">← Назад</button><h2>Добавить списком</h2></div>'+
-      '<label class="lab">Слова: по одному в строке, можно «слово ; перевод»</label><textarea id="bTxt" rows="8" lang="de" autocapitalize="off" spellcheck="false"></textarea>'+
+      '<label class="lab">Слова: через запятую или по одному в строке, можно «слово ; перевод»</label><textarea id="bTxt" rows="8" lang="de" autocapitalize="off" spellcheck="false"></textarea>'+
+      '<div class="bar fix" style="margin-top:6px"><button class="sm" data-act="bFile">📄 Из файла (.txt, .csv)</button><button class="sm" data-act="bPhoto">📷 Фото списка</button><span class="hint" id="bCnt" style="align-self:center;margin-left:auto"></span></div>'+
       '<label class="lab">Тема</label><input id="bTheme" list="dlBT" value="'+esc(S.fTheme)+'" autocomplete="off"><datalist id="dlBT">'+themes.map(x=>'<option value="'+esc(x)+'">').join('')+'</datalist>'+
       '<label class="lab">Под Темой</label><input id="bSub" list="dlBS" value="'+esc(S.fSub)+'" autocomplete="off"><datalist id="dlBS">'+subs.map(x=>'<option value="'+esc(x)+'">').join('')+'</datalist>'+
       '<label class="lab">Теги</label><input id="bTags" autocomplete="off">'+
@@ -1239,14 +1258,15 @@ const ACT={
       '<button class="pri" data-act="bGo" style="width:100%">Добавить</button></div>';
   },
   bClose(){$('#modal').innerHTML='';render();},
+  bFile(){$('#fTxt').click();},
+  bPhoto(){$('#fImg').click();},
   async bGo(){
     const theme=$('#bTheme').value.trim(),sub=$('#bSub').value.trim(),tags=$('#bTags').value.trim(),ai=$('#bAi').checked;
-    const lines=$('#bTxt').value.split('\n').map(x=>x.trim()).filter(Boolean);
+    const lines=parseWordList($('#bTxt').value);
     if(!lines.length){toast('Введите слова');return;}
     const have=new Set(S.words.filter(w=>w.kind!=='h').map(keyOf)),added=[];
     lines.forEach(l=>{
-      const q=l.split(/\s*[;\t]\s*/),word=q[0].trim();if(!word)return;
-      const w=blankWord({theme,sub,word,tr:(q[1]||'').trim(),tags}),k=keyOf(w);
+      const w=blankWord({theme,sub,word:l.word,tr:l.tr,tags}),k=keyOf(w);
       if(have.has(k))return;have.add(k);
       w.ord=newOrd(theme,sub);S.words.push(w);added.push(w);
     });
@@ -1364,7 +1384,54 @@ document.addEventListener('change',e=>{
 document.addEventListener('keydown',e=>{
   if(e.key==='Enter'&&e.target.id==='ans'){e.preventDefault();ACT.check();}
 });
-$('#fXlsx').addEventListener('change',e=>{const f=e.target.files[0];e.target.value='';if(f)doImport(f);});
+$('#fXlsx').addEventListener('change',async e=>{
+  const fs=[...e.target.files];e.target.value='';
+  if(fs.length===1){doImport(fs[0]);return;}
+  if(fs.length>1){
+    const ok=await ask('Слить файлов: '+fs.length+' в один словарь? Дубли объединятся, прогресс сохранится.',[{t:'Слить',v:true,cls:'pri'},{t:'Отмена',v:false}]);
+    if(!ok) return;
+    const msgs=[];
+    for(const f of fs){const m=await doImport(f,'merge',true);if(m)msgs.push(m);}
+    toast('Файлов: '+fs.length+'. '+msgs.join(' | '));
+  }
+});
+$('#fTxt').addEventListener('change',async e=>{
+  const f=e.target.files[0];e.target.value='';if(!f)return;
+  try{
+    const t=await f.text(),ta=$('#bTxt');if(!ta)return;
+    const csv=/\.(csv|tsv)$/i.test(f.name)?t.replace(/\r/g,'').split('\n').map(l=>l.replace(/^"|"$/g,'').split(/[;\t]|","/).slice(0,2).join(' ; ').replace(/ ; $/,'')).join('\n'):t;
+    ta.value=(ta.value.trim()?ta.value.trim()+'\n':'')+csv.trim();bCount();toast('Слов в списке: '+parseWordList(ta.value).length);
+  }catch(err){fail(err);}
+});
+function bCount(){const c=$('#bCnt'),ta=$('#bTxt');if(c&&ta){const n=parseWordList(ta.value).length;c.textContent=n?'слов: '+n:'';}}
+function shrinkImage(file,max){
+  return new Promise((res,rej)=>{
+    const img=new Image(),u=URL.createObjectURL(file);
+    img.onload=()=>{
+      const k=Math.min(1,max/Math.max(img.width,img.height)),c=document.createElement('canvas');
+      c.width=Math.round(img.width*k);c.height=Math.round(img.height*k);
+      const x=c.getContext('2d');x.fillStyle='#fff';x.fillRect(0,0,c.width,c.height);x.drawImage(img,0,0,c.width,c.height);
+      URL.revokeObjectURL(u);res(c.toDataURL('image/jpeg',0.82).split(',')[1]);
+    };
+    img.onerror=()=>{URL.revokeObjectURL(u);rej(new Error('не удалось открыть картинку'));};
+    img.src=u;
+  });
+}
+$('#fImg').addEventListener('change',async e=>{
+  const f=e.target.files[0];e.target.value='';if(!f)return;
+  const p=progress('Читаю фото…');
+  try{
+    const data=await shrinkImage(f,1600);
+    const d=await callApi('gemini',{a:'scan',image:data,mime:'image/jpeg'});
+    const ta=$('#bTxt');
+    if(ta&&d.items&&d.items.length){
+      ta.value=(ta.value.trim()?ta.value.trim()+'\n':'')+d.items.map(x=>x.tr?x.word+' ; '+x.tr:x.word).join('\n');
+      bCount();toast('Найдено слов: '+d.items.length+'. Проверьте список и нажмите «Добавить»');
+    } else toast('На фото слов не найдено');
+  }catch(err){toast('Фото: '+err.message);}
+  p.close();
+});
+document.addEventListener('input',e=>{if(e.target.id==='bTxt')bCount();});
 $('#fJson').addEventListener('change',e=>{const f=e.target.files[0];e.target.value='';if(f)doRestore(f);});
 $('#fCsv').addEventListener('change',e=>{const f=e.target.files[0];e.target.value='';if(f)doOzvFile(f);});
 

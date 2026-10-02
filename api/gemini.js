@@ -38,14 +38,21 @@ const SCHEMA = {
   },
 };
 
-async function ask(key, model, prompt, simple) {
+const SCAN_SCHEMA = { type: 'ARRAY', items: { type: 'OBJECT', properties: { word: { type: 'STRING' }, tr: { type: 'STRING' } }, required: ['word', 'tr'] } };
+function scanPrompt() {
+  return 'The image is a photo or screenshot of a vocabulary list, textbook page or notes (German and/or Russian). Extract every vocabulary item you can read. ' +
+    'Return a JSON array of objects {"word": string, "tr": string}. "word" is the German word or phrase as written (nouns with their article if shown; keep a plural if it is written next to the noun, e.g. "der Teppich, Teppiche"). ' +
+    '"tr" is the Russian translation if it is printed next to the word, otherwise an empty string. If the list is only in Russian, put the Russian word in "word" and leave "tr" empty. ' +
+    'Skip headings, page numbers and anything that is not a vocabulary item. Do not translate or invent anything. At most 150 items, in reading order.';
+}
+async function ask(key, model, prompt, simple, schema, img) {
   const cfg = { temperature: 0.2, responseMimeType: 'application/json' };
   if (/(2\.5|3|3\.5)-flash/.test(model)) cfg.thinkingConfig = { thinkingBudget: 0 };
-  if (!simple) cfg.responseSchema = SCHEMA;
+  if (!simple) cfg.responseSchema = schema || SCHEMA;
   const r = await fetchT('https://generativelanguage.googleapis.com/v1beta/models/' + encodeURIComponent(model) + ':generateContent', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key },
-    body: JSON.stringify({ contents: [{ role: 'user', parts: [{ text: prompt }] }], generationConfig: cfg }),
+    body: JSON.stringify({ contents: [{ role: 'user', parts: (img ? [{ inline_data: { mime_type: img.mime, data: img.data } }] : []).concat([{ text: prompt }]) }], generationConfig: cfg }),
   }, 30000);
   const txt = await r.text();
   if (!r.ok) {
@@ -107,12 +114,20 @@ module.exports = async function handler(req, res) {
 
   let b = req.body; if (typeof b === 'string') { try { b = JSON.parse(b); } catch (e) { b = {}; } }
   b = b || {};
-  if (b.a !== 'fill') return res.status(400).json({ error: 'Неизвестное действие', code: 'action' });
+  const scan = b.a === 'scan';
+  if (b.a !== 'fill' && !scan) return res.status(400).json({ error: 'Неизвестное действие', code: 'action' });
   const items = (Array.isArray(b.items) ? b.items : []).slice(0, 15)
     .map(x => ({ word: clamp(x && x.word, 60), tr: clamp(x && x.tr, 120) }))
     .filter(x => x.word);
-  if (!items.length) return res.status(400).json({ error: 'Нет слов', code: 'empty' });
-  const prompt = buildPrompt(items);
+  let img = null;
+  if (scan) {
+    const mime = String(b.mime || '');
+    const data = String(b.image || '');
+    if (!/^image\/(jpeg|png|webp)$/.test(mime) || !/^[A-Za-z0-9+/=]+$/.test(data) || data.length < 100) return res.status(400).json({ error: 'Нет картинки', code: 'empty' });
+    if (data.length > 4200000) return res.status(413).json({ error: 'Картинка слишком большая', code: 'too_big' });
+    img = { mime, data };
+  } else if (!items.length) return res.status(400).json({ error: 'Нет слов', code: 'empty' });
+  const prompt = scan ? scanPrompt() : buildPrompt(items);
 
   const first = [process.env.MODEL_TEXT || process.env.GEMINI_MODEL || 'gemini-3.5-flash-lite', 'gemini-3.5-flash', 'gemini-2.5-flash', 'gemini-flash-latest']
     .filter((m, i, a2) => m && a2.indexOf(m) === i);
@@ -129,7 +144,14 @@ module.exports = async function handler(req, res) {
       for (let att = 0; att < 3; att++) {
         if (Date.now() - t0 > 48000) { last = last || new Error('Не хватило времени'); tried.push('время вышло'); keyDead = true; break; }
         try {
-          const out = await ask(key, model, prompt, simple);
+          const out = await ask(key, model, prompt, simple, scan ? SCAN_SCHEMA : null, img);
+          if (scan) {
+            if (!Array.isArray(out)) { last = new Error('Gemini не вернул список'); tried.push(model + ' → формат'); break; }
+            const seen = new Set();
+            const list = out.map(x => ({ word: clamp(x && x.word, 80), tr: clamp(x && x.tr, 120) }))
+              .filter(x => x.word && !seen.has(x.word.toLowerCase()) && seen.add(x.word.toLowerCase())).slice(0, 150);
+            return res.status(200).json({ items: list, model, tried });
+          }
           if (!Array.isArray(out) || out.length !== items.length) {
             last = new Error('Gemini вернул ' + (Array.isArray(out) ? out.length : 0) + ' карточек вместо ' + items.length);
             tried.push(model + ' → формат');
