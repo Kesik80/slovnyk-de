@@ -79,6 +79,11 @@ table.cj td{padding:3px 8px;white-space:nowrap}
 .sprow{display:flex;align-items:center;gap:8px;justify-content:center}
 .front.wd,.big.wd{display:flex;align-items:center;justify-content:center;gap:10px}
 .rt{white-space:pre-wrap;margin:4px 0}
+.exs{margin:12px 0 4px;border-top:1px solid var(--bd);padding-top:8px}
+.exl{margin:10px 0;line-height:1.5;font-size:16px}
+.exl b{font-weight:600;color:var(--tx)}
+.exl i{font-style:italic;font-weight:300;color:var(--mu)}
+.exl .dash{color:var(--mu)}
 .lab{display:block;font-size:13px;color:var(--mu);margin:12px 0 4px}
 .modal{position:fixed;inset:0;background:var(--bg);z-index:20;overflow:auto;padding:0 14px 40px;padding-top:env(safe-area-inset-top)}
 .mh{position:sticky;top:0;background:var(--bg);display:flex;align-items:center;gap:8px;padding:10px 0;border-bottom:1px solid var(--bd);z-index:2}
@@ -539,6 +544,12 @@ function renderList(){
 }
 
 /* ---------- таблицы: показ ---------- */
+function exView(ex){
+  return '<div class="exs">'+str(ex).replace(/\r/g,'').split('\n').filter(l=>l.trim()).map(l=>{
+    const m=l.match(/^(.*?)\s+[—–-]\s+(.*)$/);
+    return m?'<div class="exl"><b lang="de">'+esc(m[1])+'</b> <span class="dash">—</span> <i>'+esc(m[2])+'</i></div>':'<div class="exl"><b lang="de">'+esc(l)+'</b></div>';
+  }).join('')+'</div>';
+}
 function richView(s,spk){
   const p=parseRich(s); let h='';
   if(p.text) h+=spk?'<div class="rt sprow" lang="de"><span>'+esc(p.text)+'</span><button class="ic sp" data-act="playConj" aria-label="Озвучить">🔊</button></div>':'<div class="rt" lang="de">'+esc(p.text)+'</div>';
@@ -690,7 +701,7 @@ function renderReview(){
     if(w.def) h+='<div class="rt" lang="de">'+esc(w.def)+'</div>';
     if(w.conj) h+=richView(w.conj,true);
     if(w.decl) h+=richView(w.decl);
-    if(w.ex) h+='<div class="rt" lang="de" style="color:var(--mu)">'+esc(w.ex)+'</div>';
+    if(w.ex) h+=exView(w.ex);
     h+='</div>';
     const now=Date.now(),names={1:'Снова',2:'Трудно',3:'Хорошо',4:'Легко'};
     h+='<div class="grades">'+[1,2,3,4].map(g=>'<button class="g'+g+'" data-act="grade" data-g="'+g+'">'+names[g]+'<small>'+fmtNext(schedule(it.c,g,now),now)+'</small></button>').join('')+'</div>';
