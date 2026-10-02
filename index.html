@@ -994,6 +994,24 @@ function applyFill(w,f,overwrite){
   w.fillFor=w.word;
   return n;
 }
+/* глагол (одно слово строчными) сначала ищем на verbformen.ru — без Gemini; остальное и неудачи — Gemini */
+async function smartFill(items){
+  const out=new Array(items.length).fill(null);
+  const cand=[];
+  items.forEach((it,i)=>{if(/^[a-zäöüß]{2,40}$/.test(str(it.word).trim())) cand.push(i);});
+  if(cand.length){
+    try{
+      const d=await callApi('verb',{words:cand.map(i=>str(items[i].word).trim())},{ms:40000});
+      (d.items||[]).forEach((f,k)=>{if(f) out[cand[k]]=f;});
+    }catch(e){if(e.code==='need_pass') throw e;}
+  }
+  const rest=items.map((it,i)=>i).filter(i=>!out[i]);
+  if(rest.length){
+    const d=await callApi('gemini',{a:'fill',items:rest.map(i=>items[i])});
+    rest.forEach((i,k)=>{out[i]=(d.items||[])[k]||null;});
+  }
+  return {items:out};
+}
 async function fillMany(list,onProg){
   let done=0,err=null;
   for(let i=0;i<list.length&&!S.stop;i+=10){
@@ -1002,7 +1020,7 @@ async function fillMany(list,onProg){
       const ss=chunk.filter(isSent),ww=chunk.filter(w=>!isSent(w));
       if(ss.length) await fillSentences(ss);
       if(ww.length){
-        const d=await callApi('gemini',{a:'fill',items:ww.map(w=>({word:w.word,tr:w.tr}))});
+        const d=await smartFill(ww.map(w=>({word:w.word,tr:w.tr})));
         ww.forEach((w,k)=>{if(d.items&&d.items[k]){applyFill(w,d.items[k],false);saveWord(w,true);}});
       }
       done+=chunk.length;
@@ -1013,8 +1031,8 @@ async function fillMany(list,onProg){
 }
 async function runFill(list){
   S.stop=false;
-  const p=progress('Gemini заполняет… 0 из '+list.length);
-  const r=await fillMany(list,(d,n)=>p.set('Gemini заполняет… '+d+' из '+n));
+  const p=progress('Заполняю… 0 из '+list.length);
+  const r=await fillMany(list,(d,n)=>p.set('Заполняю… '+d+' из '+n));
   p.close();return r;
 }
 
@@ -1349,15 +1367,16 @@ const ACT={
       if(w.sound===audioName(w.fillFor)) w.sound='';
       if(/^(правильные|неправильные)$/.test(str(w.theme))&&str(w.sub)==='глаголы'){w.theme='';w.sub='';}
     } else if(!['tr','conj','decl','ex','def','ipa'].some(k=>!str(w[k]).trim())&&!convIncomplete(w)){
-      over=await ask('Все поля уже заполнены. Перезаписать ответом Gemini?',[{t:'Перезаписать',v:true,cls:'dng'},{t:'Отмена',v:false}]);
+      over=await ask('Все поля уже заполнены. Перезаписать новыми данными?',[{t:'Перезаписать',v:true,cls:'dng'},{t:'Отмена',v:false}]);
       if(!over) return;
     }
     t.textContent='…';t.disabled=true;
     try{
-      const d=await callApi('gemini',{a:'fill',items:[{word:w.word,tr:over?'':w.tr}]});
+      const d=await smartFill([{word:w.word,tr:over?'':w.tr}]);
+      if(!d.items[0]) throw new Error('нет ответа');
       const n=applyFill(w,d.items[0],over);saveWord(w,true);openEditor(w.id);
       toast(n?'Заполнено полей: '+n:'Нечего добавлять');
-    }catch(e){t.textContent='✨';t.disabled=false;toast('Gemini: '+e.message);}
+    }catch(e){t.textContent='✨';t.disabled=false;toast('Ошибка: '+e.message);}
   },
   edPlay(){if(S.ed&&str(S.ed.w.word).trim())speak(S.ed.w);},
   play(){const it=S.rv&&S.rv.cur;if(it)speak(it.w);},
