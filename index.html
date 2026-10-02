@@ -38,6 +38,9 @@ nav button b{display:block;font-size:20px;font-weight:400}
 nav button.on{color:var(--ac)}
 .badge{position:absolute;top:4px;left:calc(50% + 6px);background:var(--ac);color:var(--acx);border-radius:9px;font-size:11px;padding:0 6px;min-width:18px;line-height:18px}
 .bar{display:flex;gap:8px;margin-bottom:8px}
+.tools{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:4px}
+.tools button{padding:8px 4px;white-space:nowrap}
+.cntl{text-align:right;color:var(--mu);font-size:13px;margin:0 4px 6px}
 .bar>*{flex:1;min-width:0}
 .bar.fix>button{flex:0 0 auto}
 .fl{display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-bottom:10px}
@@ -533,7 +536,7 @@ function renderList(){
   const opt=(arr,v,ph)=>'<option value="">'+ph+'</option>'+arr.map(x=>'<option'+(x===v?' selected':'')+' value="'+esc(x)+'">'+esc(x)+'</option>').join('');
   let h='<div class="bar"><input id="q" type="search" placeholder="Поиск…" value="'+esc(S.q)+'" autocomplete="off"></div>'+
     '<div class="fl"><select data-f="fTheme">'+opt(themes,S.fTheme,'Все темы')+'</select><select data-f="fSub">'+opt(subs,S.fSub,'Все подтемы')+'</select><select data-f="fTag">'+opt(tags,S.fTag,'Все теги')+'</select></div>'+
-    '<div class="bar fix"><button class="sm" data-act="colAll">Свернуть все</button><button class="sm" data-act="expAll">Развернуть все</button><button class="sm" data-act="batch">＋ Списком</button><span class="hint" style="align-self:center;margin-left:auto">'+words.length+' слов</span></div>';
+    '<div class="tools"><button class="sm" data-act="colAll">Свернуть</button><button class="sm" data-act="expAll">Развернуть</button><button class="sm" data-act="batch">＋ Списком</button></div><div class="cntl">Всего: '+words.length+'</div>';
   let shown=0;
   groups.forEach(g=>{
     if(!g.n) return; shown++;
