@@ -6,6 +6,7 @@
 
 const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36';
 
+let lastErr = '';
 async function getPage(word, host) {
   const ctl = new AbortController();
   const t = setTimeout(() => ctl.abort(), 15000);
@@ -20,9 +21,9 @@ async function getPage(word, host) {
         'Accept-Language': 'ru-RU,ru;q=0.9,de;q=0.8', 'Referer': 'https://www.verbformen.' + host + '/',
       },
     });
-    if (!r.ok) return null;
+    if (!r.ok) { lastErr = host + ': HTTP ' + r.status; return null; }
     return await r.text();
-  } catch (e) { return null; } finally { clearTimeout(t); }
+  } catch (e) { lastErr = host + ': ' + e.message; return null; } finally { clearTimeout(t); }
 }
 
 const dec = s => s.replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&shy;/g, '').replace(/&middot;/g, '·')
@@ -148,10 +149,35 @@ function parse(html, word) {
   return { word, tr: c.tr, pos: 'verb', irr: isIrregular(html), conj, pres: T.pres, prat: T.prat, perf: T.perf, ipa: c.ipa, decl: '', ex: c.ex, def: c.def };
 }
 
+
+// диагностика: GET /api/verb?w=aufstehen&p=<код доступа> — что именно получает сервер
+async function debugInfo(w) {
+  const out = {};
+  for (const host of ['de', 'ru']) {
+    lastErr = '';
+    const html = await getPage(w, host);
+    if (!html) { out[host] = { error: lastErr || 'нет ответа' }; continue; }
+    let card = null, ok = false;
+    try { card = parseCard(html); ok = !!parse(html, w); } catch (e) { card = { error: e.message }; }
+    const i = html.search(/<span lang="ru">/);
+    out[host] = {
+      length: html.length, tablesOk: ok, card,
+      marks: { langRu: i >= 0, rNt: /\brNt\b/.test(html), vStm: /vStm/.test(html), ipaSlash: /<p[^>]*>\s*\/[^\/<>]+\//.test(html) },
+      title: (html.match(/<title>([\s\S]{0,120}?)<\/title>/) || [])[1] || '',
+      around: i >= 0 ? strip(html.slice(i, i + 1500)).slice(0, 500) : strip(html.replace(/<script[\s\S]*?<\/script>|<style[\s\S]*?<\/style>/g, '').slice(0, 20000)).slice(0, 500),
+    };
+  }
+  return out;
+}
+
 module.exports = async function handler(req, res) {
   res.setHeader('Cache-Control', 'no-store');
-  if (req.method !== 'POST') return res.status(405).json({ error: 'Только POST', code: 'method' });
   const pass = String(process.env.OZV_PASSWORD || '').trim();
+  if (req.method === 'GET' && pass && String((req.query || {}).p || '') === pass && /^[a-zäöüß]{2,40}$/.test(String((req.query || {}).w || ''))) {
+    res.setHeader('Content-Type', 'application/json; charset=utf-8');
+    return res.status(200).send(JSON.stringify(await debugInfo(req.query.w), null, 1));
+  }
+  if (req.method !== 'POST') return res.status(405).json({ error: 'Только POST', code: 'method' });
   if (!pass) return res.status(503).json({ error: 'В Vercel не задан OZV_PASSWORD — функция выключена', code: 'no_pass' });
   if (String(req.headers['x-ozv-pass'] || '').trim() !== pass) return res.status(401).json({ error: 'Нужен код доступа', code: 'need_pass' });
   let b = req.body; if (typeof b === 'string') { try { b = JSON.parse(b); } catch (e) { b = {}; } }
