@@ -159,12 +159,19 @@ module.exports = async function handler(req, res) {
     .map(w => String(w || '').trim().toLowerCase().slice(0, 40));
   const items = await Promise.all(words.map(async w => {
     if (!/^[a-zäöüß]{2,40}$/.test(w)) return null;       // только одно слово, строчными (глагол)
-    for (const host of ['ru', 'de']) {
+    // сначала .de (разметка проверена на сохранённых страницах), потом .ru: недостающие поля берём оттуда
+    let res = null;
+    for (const host of ['de', 'ru']) {
       const html = await getPage(w, host);
       if (!html) continue;
-      try { const r = parse(html, w); if (r) return r; } catch (e) { /* пробуем другой сайт */ }
+      let r = null;
+      try { r = parse(html, w); } catch (e) { r = null; }
+      if (!r) continue;
+      if (!res) res = r;
+      else for (const k of ['tr', 'ipa', 'def', 'ex']) if (!res[k] && r[k]) res[k] = r[k];
+      if (res.tr && res.ipa && res.def && res.ex) break;
     }
-    return null;
+    return res;
   }));
   res.status(200).json({ items });
 };
