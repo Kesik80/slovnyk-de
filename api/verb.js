@@ -94,10 +94,9 @@ function parseCard(html) {
   const out = { tr: '', ipa: '', def: '', ex: '' };
   const sm = html.match(/<span lang="ru">([\s\S]*?)<\/span>/);
   if (sm) out.tr = strip(sm[1].replace(/<img[^>]*>/g, '')).split(/[,;]/)[0].trim();
-  const from = sm ? sm.index : 0;
-  const rest = html.slice(from, from + 6000);
-  const ip = rest.match(/<p[^>]*>\s*\/([^\/<>]+)\//);                  // первая транскрипция в /…/ — инфинитив
-  if (ip && IPA_CH.test(ip[1])) out.ipa = fixIpa(ip[1].trim());
+  const rest = html;     // якорь по <span lang="ru"> на сервере может отсутствовать — ищем блоки по их разметке
+  const ipRe = /<p[^>]*>\s*\/([^\/<>]+)\//g;                          // первая транскрипция в /…/ — инфинитив
+  for (let ip; (ip = ipRe.exec(rest));) if (IPA_CH.test(ip[1])) { out.ipa = fixIpa(ip[1].trim()); break; }
   const dm = rest.match(/<p[^>]*\brNt\b[^>]*>\s*<i>([\s\S]*?)<\/i>\s*<\/p>/);
   if (dm) out.def = strip(dm[1]).split(';')[0].trim();
   const em = rest.match(/<p[^>]*\brNt\b[^>]*>\s*»([\s\S]*?)<\/p>/);
