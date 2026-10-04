@@ -994,14 +994,19 @@ function applyFill(w,f,overwrite){
   w.fillFor=w.word;
   return n;
 }
-/* глагол (одно слово строчными) сначала ищем на verbformen.ru — без Gemini; остальное и неудачи — Gemini */
+/* глагол (строчными) и существительное (с большой буквы) сначала ищем на verbformen — без Gemini; остальное и неудачи — Gemini */
 async function smartFill(items){
   const out=new Array(items.length).fill(null);
   const cand=[];
-  items.forEach((it,i)=>{if(/^[a-zäöüß]{2,40}$/.test(str(it.word).trim())) cand.push(i);});
+  const ask=[];
+  items.forEach((it,i)=>{       // глагол — строчными; существительное — с большой буквы (можно с артиклем)
+    const t=str(it.word).trim(),m=t.match(/^(?:(?:der|die|das)\s+)?([A-ZÄÖÜ][a-zäöüß]{1,39})$/i);
+    if(/^[a-zäöüß]{2,40}$/.test(t)){cand.push(i);ask.push(t);}
+    else if(m&&/^[A-ZÄÖÜ]/.test(m[1])){cand.push(i);ask.push(m[1]);}
+  });
   if(cand.length){
     try{
-      const d=await callApi('verb',{words:cand.map(i=>str(items[i].word).trim())},{ms:40000});
+      const d=await callApi('verb',{words:ask},{ms:40000});
       (d.items||[]).forEach((f,k)=>{if(f) out[cand[k]]=f;});
     }catch(e){if(e.code==='need_pass') throw e;}
   }

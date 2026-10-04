@@ -1,4 +1,4 @@
-// Wörter — глаголы с verbformen.ru / .de (без Gemini). Основа разбора — из рабочего проекта verb-de, блоки карточки проверены на сохранённых страницах.
+// Wörter — глаголы и существительные с verbformen.ru / .de (без Gemini). Основа разбора — из рабочего проекта verb-de, блоки карточки проверены на сохранённых страницах.
 // ENV: OZV_PASSWORD — код доступа (обязательно, как у gemini)
 // Запрос:  POST {words:['rauchen','gehen']}   до 10 слов
 // Ответ:   {items:[ null | {word,tr,pos:'verb',irr,conj,pres,prat,perf,ipa,decl:'',ex:'',def:''} ]}
@@ -7,23 +7,32 @@
 const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36';
 
 let lastErr = '';
-async function getPage(word, host) {
-  const ctl = new AbortController();
-  const t = setTimeout(() => ctl.abort(), 15000);
-  const url = host === 'ru'
-    ? 'https://www.verbformen.ru/sprjazhenie/' + encodeURIComponent(word) + '.htm'
-    : 'https://www.verbformen.de/konjugation/?w=' + encodeURIComponent(word);
-  try {
-    const r = await fetch(url, {
-      signal: ctl.signal,
-      headers: {
-        'User-Agent': UA, 'Accept': 'text/html,application/xhtml+xml',
-        'Accept-Language': 'ru-RU,ru;q=0.9,de;q=0.8', 'Referer': 'https://www.verbformen.' + host + '/',
-      },
-    });
-    if (!r.ok) { lastErr = host + ': HTTP ' + r.status; return null; }
-    return await r.text();
-  } catch (e) { lastErr = host + ': ' + e.message; return null; } finally { clearTimeout(t); }
+function urlsFor(word, host, noun) {
+  const w = encodeURIComponent(word);
+  if (host === 'de') return ['https://www.verbformen.de/konjugation/?w=' + w];
+  return noun
+    ? ['https://www.verbformen.ru/sprjazhenie/?w=' + w, 'https://www.verbformen.ru/?w=' + w]
+    : ['https://www.verbformen.ru/sprjazhenie/' + w + '.htm'];
+}
+async function getPage(word, host, noun) {
+  for (const url of urlsFor(word, host, noun)) {
+    const ctl = new AbortController();
+    const t = setTimeout(() => ctl.abort(), 15000);
+    try {
+      const r = await fetch(url, {
+        signal: ctl.signal,
+        headers: {
+          'User-Agent': UA, 'Accept': 'text/html,application/xhtml+xml',
+          'Accept-Language': 'ru-RU,ru;q=0.9,de;q=0.8', 'Referer': 'https://www.verbformen.' + host + '/',
+        },
+      });
+      if (!r.ok) { lastErr = url + ' → HTTP ' + r.status; continue; }
+      const html = await r.text();
+      if (noun && !/class="vGrnd/.test(html)) { lastErr = url + ' → нет карточки слова'; continue; }
+      return html;
+    } catch (e) { lastErr = url + ' → ' + e.message; } finally { clearTimeout(t); }
+  }
+  return null;
 }
 
 const dec = s => s.replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&shy;/g, '').replace(/&middot;/g, '·')
@@ -97,8 +106,8 @@ function parseCard(html) {
   const rest = html;     // якорь по <span lang="ru"> на сервере может отсутствовать — ищем блоки по их разметке
   const ipRe = /<p[^>]*>\s*\/([^\/<>]+)\//g;                          // первая транскрипция в /…/ — инфинитив
   for (let ip; (ip = ipRe.exec(rest));) if (IPA_CH.test(ip[1])) { out.ipa = fixIpa(ip[1].trim()); break; }
-  const dm = rest.match(/<p[^>]*\brNt\b[^>]*>\s*<i>([\s\S]*?)<\/i>\s*<\/p>/);
-  if (dm) out.def = strip(dm[1]).split(';')[0].trim();
+  const dm = rest.match(/<p[^>]*\br1Zeile\b[^>]*>\s*<i>([\s\S]*?)<\/i>\s*<\/p>/);
+  if (dm) out.def = strip(dm[1]).replace(/^(\[[^\]]*\]\s*)+/, '').split(';')[0].trim();
   const em = rest.match(/<p[^>]*\brNt\b[^>]*>\s*»([\s\S]*?)<\/p>/);
   if (em) {
     const k = em[1].indexOf('<img');
@@ -107,7 +116,12 @@ function parseCard(html) {
       if (de && ru) out.ex = (de + ' — ' + ru).replace(/\s+([?!.,;:])/g, '$1');
     }
   }
+  if (!out.tr) {                       // абзац с переводами: крупный шрифт, флаг + слова
+    const tm = html.match(/<p[^>]*font-size:\s*1\.22em[^>]*>([\s\S]*?)<\/p>/);
+    if (tm) { const t = strip(tm[1].replace(/<img[^>]*>/g, '')); if (/[а-яё]/i.test(t)) out.tr = t.split(/[,;]/)[0].trim(); }
+  }
   if (!out.tr) out.tr = transOf(html).split(/[,;]/)[0].trim();
+  out.tr = out.tr.replace(/\u0301/g, '');
   return out;
 }
 
@@ -152,12 +166,13 @@ function parse(html, word) {
 // диагностика: GET /api/verb?w=aufstehen&p=<код доступа> — что именно получает сервер
 async function debugInfo(w) {
   const out = {};
+  const noun = /^[A-ZÄÖÜ]/.test(w);
   for (const host of ['de', 'ru']) {
     lastErr = '';
-    const html = await getPage(w, host);
+    const html = await getPage(w, host, noun);
     if (!html) { out[host] = { error: lastErr || 'нет ответа' }; continue; }
     let card = null, ok = false;
-    try { card = parseCard(html); ok = !!parse(html, w); } catch (e) { card = { error: e.message }; }
+    try { card = parseCard(html); ok = noun ? parseNoun(html, w) : !!parse(html, w); } catch (e) { card = { error: e.message }; }
     const i = html.search(/<span lang="ru">/);
     out[host] = {
       length: html.length, tablesOk: ok, card,
@@ -169,10 +184,30 @@ async function debugInfo(w) {
   return out;
 }
 
+// существительное: «der Bleistift, Bleistifte» (артикль + ед.ч., через запятую мн.ч. без артикля)
+function parseNoun(html, word) {
+  const g = html.match(/<span class="vGrnd[^"]*">\s*(der|die|das)\s([\s\S]*?)<a /i);
+  if (!g) return null;
+  const sing = strip(g[2]);
+  if (!sing || sing.toLowerCase() !== word.toLowerCase()) return null;
+  const art = g[1].toLowerCase();
+  let plural = '';
+  const sm = html.match(/<p[^>]*class="[^"]*\bvStm\b[^"]*"[^>]*>([\s\S]*?)<\/p>/);
+  if (sm) {
+    const parts = sm[1].replace(/<a [\s\S]*?<\/a>/g, '').split('·').map(x => strip(x));
+    if (parts.length >= 2) {
+      const pl = parts[1].replace(/\(([^)]*)\)/g, '$1');
+      if (/^[A-Za-zÄÖÜäöüß-]{2,40}$/.test(pl) && pl !== '-' ) plural = pl;
+    }
+  }
+  const c = parseCard(html);
+  return { word: art + ' ' + sing + (plural && plural.toLowerCase() !== sing.toLowerCase() ? ', ' + plural : ''), tr: c.tr, pos: 'noun', irr: false, conj: '', pres: [], prat: [], perf: [], ipa: c.ipa, decl: '', ex: c.ex, def: c.def };
+}
+
 module.exports = async function handler(req, res) {
   res.setHeader('Cache-Control', 'no-store');
   const pass = String(process.env.OZV_PASSWORD || '').trim();
-  if (req.method === 'GET' && pass && String((req.query || {}).p || '') === pass && /^[a-zäöüß]{2,40}$/.test(String((req.query || {}).w || ''))) {
+  if (req.method === 'GET' && pass && String((req.query || {}).p || '') === pass && /^[A-Za-zÄÖÜäöüß]{2,40}$/.test(String((req.query || {}).w || ''))) {
     res.setHeader('Content-Type', 'application/json; charset=utf-8');
     return res.status(200).send(JSON.stringify(await debugInfo(req.query.w), null, 1));
   }
@@ -181,16 +216,18 @@ module.exports = async function handler(req, res) {
   if (String(req.headers['x-ozv-pass'] || '').trim() !== pass) return res.status(401).json({ error: 'Нужен код доступа', code: 'need_pass' });
   let b = req.body; if (typeof b === 'string') { try { b = JSON.parse(b); } catch (e) { b = {}; } }
   const words = (Array.isArray(b && b.words) ? b.words : []).slice(0, 10)
-    .map(w => String(w || '').trim().toLowerCase().slice(0, 40));
-  const items = await Promise.all(words.map(async w => {
-    if (!/^[a-zäöüß]{2,40}$/.test(w)) return null;       // только одно слово, строчными (глагол)
+    .map(w => String(w || '').trim().slice(0, 40));
+  const items = await Promise.all(words.map(async w0 => {
+    const noun = /^[A-ZÄÖÜ][a-zäöüß]{1,39}$/.test(w0);                 // Существительное — с большой буквы
+    const w = noun ? w0 : w0.toLowerCase();                              // глагол — строчными
+    if (!noun && !/^[a-zäöüß]{2,40}$/.test(w)) return null;
     // сначала .de (разметка проверена на сохранённых страницах), потом .ru: недостающие поля берём оттуда
     let res = null;
     for (const host of ['de', 'ru']) {
-      const html = await getPage(w, host);
+      const html = await getPage(w, host, noun);
       if (!html) continue;
       let r = null;
-      try { r = parse(html, w); } catch (e) { r = null; }
+      try { r = noun ? parseNoun(html, w) : parse(html, w); } catch (e) { r = null; }
       if (!r) continue;
       if (!res) res = r;
       else for (const k of ['tr', 'ipa', 'def', 'ex']) if (!res[k] && r[k]) res[k] = r[k];
