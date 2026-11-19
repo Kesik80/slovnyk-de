@@ -160,6 +160,9 @@ table.cj td.pn{color:var(--mu)}
 .acc .b i{display:block;height:100%;background:var(--ac)}
 details.more{margin:8px 0}
 details.more summary{cursor:pointer;color:var(--mu);padding:6px 0}
+.exl .exr{display:flex;align-items:center;gap:8px}
+.exl .exr .sp{min-width:34px;min-height:34px;font-size:15px}
+.exl i{display:block;margin-top:2px}
 </style>
 </head>
 <body>
@@ -191,6 +194,13 @@ const KEYS=['theme','sub','word','tr','tags','image','sound','def','conj','decl'
 const PRON=['ich','du','er','wir','ihr','sie','es'];
 const DAY=86400000, LEARN=[1,10], RELEARN=[10], AHEAD=20*60000;
 function str(v){return v==null?'':String(v);}
+/* разметка Word Theme Pro: *жирный*, _курсив_. Хранится как есть (без потерь), для озвучки/проверки снимается */
+function plain(s){return str(s).replace(/\*([^*\n]+)\*/g,'$1').replace(/(^|[\s(])_([^_\n]+)_(?=$|[\s).,!?;:])/g,'$1$2');}
+function md(s){
+  let h=str(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+  h=h.replace(/\*([^*\n]+)\*/g,'<b>$1</b>');
+  return h.replace(/(^|[\s(>])_([^_\n]+)_(?=$|[\s).,!?;:<])/g,'$1<i>$2</i>');
+}
 
 /* ---- таблицы [! ... !] ---- */
 function parseFlat(inner){
@@ -294,12 +304,20 @@ function parseSheet(aoa){
   }
   return {rows,extraCols,migrated};
 }
+const wrapB=x=>{x=str(x).trim();return x&&!/^\*[\s\S]*\*$/.test(x)?'*'+x+'*':x;};
+const wrapI=x=>{x=str(x).trim();return x&&!/^_[\s\S]*_$/.test(x)?'_'+x+'_':x;};
+function exToWtp(ex){
+  return str(ex).replace(/\r/g,'').split(/(\[![\s\S]*?!\])/).map(part=>{
+    if(/^\[!/.test(part)) return part;
+    return part.split('\n').map(l=>{const m=l.match(/^(.*?)\s+[—–-]\s+(.*)$/);return m?'[!'+wrapB(m[1])+'\n'+wrapI(m[2])+'!]':l;}).join('\n');
+  }).join('');
+}
 function toAoa(words,extraCols){
   const out=[COLS.concat(extraCols)];
   words.slice().sort((a,b)=>a.ord-b.ord).forEach(w=>{
     let r;
     if(w.kind==='h') r=[w.theme];
-    else r=KEYS.map(k=>w[k]).concat(extraCols.map(c=>(w.extra&&w.extra[c])||''));
+    else{const o=Object.assign({},w,{word:wrapB(w.word),tr:wrapI(w.tr),ex:exToWtp(w.ex)});r=KEYS.map(k=>o[k]).concat(extraCols.map(c=>(w.extra&&w.extra[c])||''));}
     r=r.map(v=>str(v)===''?null:str(v));
     while(r.length&&r[r.length-1]===null) r.pop();
     out.push(r);
@@ -545,7 +563,7 @@ function renderList(){
     if(!col) g.subs.forEach(s=>{
       const sk='s:'+g.theme+'\u0001'+s.sub, sc=!filt&&S.col.has(sk);
       if(s.sub) h+='<div class="sg" data-act="tg" data-k="'+esc(sk)+'"><span class="ar" style="display:inline-block;transform:rotate('+(sc?-90:0)+'deg)">▾</span>'+esc(s.sub)+' · '+s.items.length+'</div>';
-      if(!sc) s.items.forEach(w=>{h+='<div class="row" data-act="open" data-id="'+w.id+'"><span class="dot '+stClass(w)+'"></span><span class="w" lang="de">'+esc(w.word)+'</span><span class="t">'+esc(w.tr)+'</span></div>';});
+      if(!sc) s.items.forEach(w=>{h+='<div class="row" data-act="open" data-id="'+w.id+'"><span class="dot '+stClass(w)+'"></span><span class="w" lang="de">'+md(w.word)+'</span><span class="t">'+md(w.tr)+'</span></div>';});
     });
     h+='</div>';
   });
@@ -558,11 +576,21 @@ function renderList(){
 }
 
 /* ---------- таблицы: показ ---------- */
+function exItems(ex){
+  const items=[];
+  str(ex).replace(/\r/g,'').split(/(\[![\s\S]*?!\])/).forEach(part=>{
+    if(/^\[!/.test(part)){
+      const L=part.slice(2,-2).split('\n').map(x=>x.trim()).filter(Boolean);
+      if(L.length) items.push({de:L[0],ru:L.slice(1).join(' ')});
+    } else part.split('\n').filter(l=>l.trim()).forEach(l=>{
+      const m=l.match(/^(.*?)\s+[—–-]\s+(.*)$/);
+      items.push(m?{de:m[1],ru:m[2]}:{de:l,ru:''});
+    });
+  });
+  return items;
+}
 function exView(ex){
-  return '<div class="exs">'+str(ex).replace(/\r/g,'').split('\n').filter(l=>l.trim()).map(l=>{
-    const m=l.match(/^(.*?)\s+[—–-]\s+(.*)$/);
-    return m?'<div class="exl"><b lang="de">'+esc(m[1])+'</b> <span class="dash">—</span> <i>'+esc(m[2])+'</i></div>':'<div class="exl"><b lang="de">'+esc(l)+'</b></div>';
-  }).join('')+'</div>';
+  return '<div class="exs">'+exItems(ex).map((x,i)=>'<div class="exl"><div class="exr"><b lang="de">'+esc(plain(x.de))+'</b><button class="ic sp" data-act="playEx" data-i="'+i+'" aria-label="Озвучить пример">🔊</button></div>'+(x.ru?'<i>'+esc(plain(x.ru))+'</i>':'')+'</div>').join('')+'</div>';
 }
 function richView(s,spk){
   const p=parseRich(s); let h='';
@@ -683,9 +711,10 @@ function rvState(){
   return S.rv;
 }
 function renderReview(){
+  if((S.rvTab=S.rvTab||localStorage.getItem('wt_rtab')||'sched')==='train') return renderTrain();
   const rv=rvState(),view=$('#view'),q=queueInfo(rv.mode,rv.theme);
   const themes=[...new Set(realWords().map(w=>w.theme))].filter(Boolean);
-  let h='<div class="bar"><select data-rf="mode"><option value="wt"'+(rv.mode==='wt'?' selected':'')+'>Слово → перевод</option><option value="tw"'+(rv.mode==='tw'?' selected':'')+'>Перевод → слово</option><option value="ty"'+(rv.mode==='ty'?' selected':'')+'>Перевод → слово (ввод)</option><option value="ls"'+(rv.mode==='ls'?' selected':'')+'>На слух (диктовка)</option></select>'+
+  let h=rvSwitch()+'<div class="bar"><select data-rf="mode"><option value="wt"'+(rv.mode==='wt'?' selected':'')+'>Слово → перевод</option><option value="tw"'+(rv.mode==='tw'?' selected':'')+'>Перевод → слово</option><option value="ty"'+(rv.mode==='ty'?' selected':'')+'>Перевод → слово (ввод)</option><option value="ls"'+(rv.mode==='ls'?' selected':'')+'>На слух (диктовка)</option></select>'+
     '<select data-rf="theme"><option value="">Все темы</option>'+themes.map(t=>'<option'+(t===rv.theme?' selected':'')+' value="'+esc(t)+'">'+esc(t)+'</option>').join('')+'</select></div>';
   h+='<div class="cnt"><span class="n">Новые <b>'+q.nNew+'</b></span><span class="l">Учу <b>'+q.nLrn+'</b></span><span class="r">Повтор <b>'+q.nRev+'</b></span></div>';
   const it=pickCard(q);
@@ -699,9 +728,9 @@ function renderReview(){
   rv.cur=it;
   const w=it.w, wt=rv.mode==='wt';
   h+='<div class="card">';
-  if(wt) h+='<div class="front wd'+(isSent(w)?' sent':'')+'" lang="de"><span>'+esc(w.word)+'</span><button class="ic sp" data-act="play" aria-label="Озвучить">🔊</button></div>';
+  if(wt) h+='<div class="front wd'+(isSent(w)?' sent':'')+'" lang="de"><span>'+md(w.word)+'</span><button class="ic sp" data-act="play" aria-label="Озвучить">🔊</button></div>';
   else if(rv.mode==='ls') h+='<div class="front ls"><button class="pri bigplay" data-act="play" aria-label="Послушать">🔊</button><span class="hint" style="font-size:14px;font-weight:400">Послушайте и введите слово</span></div>';
-  else h+='<div class="front">'+esc(w.tr)+'</div>';
+  else h+='<div class="front">'+md(w.tr)+'</div>';
   if((rv.mode==='ty'||rv.mode==='ls')&&!rv.shown) h+='<input id="ans" lang="de" placeholder="Введите слово…" autocomplete="off" autocapitalize="off" spellcheck="false"><div class="bar" style="margin-top:10px"><button class="pri" data-act="check">Проверить</button></div>';
   else if(!rv.shown) h+='<div class="bar"><button class="pri" data-act="show">Показать ответ</button></div>';
   else{
@@ -710,7 +739,7 @@ function renderReview(){
       h+='<div class="res '+rv.res+'">'+t+(rv.res==='bad'?' — вы ввели «'+esc(rv.typed)+'»':'')+'</div>';
     }
     h+='<div class="back">';
-    if(wt) h+='<div class="big">'+esc(w.tr)+'</div>'; else h+='<div class="big wd" lang="de"><span>'+esc(w.word)+'</span><button class="ic sp" data-act="play" aria-label="Озвучить">🔊</button></div>'+(rv.mode==='ls'?'<div class="sub">'+esc(w.tr)+'</div>':'');
+    if(wt) h+='<div class="big">'+md(w.tr)+'</div>'; else h+='<div class="big wd" lang="de"><span>'+md(w.word)+'</span><button class="ic sp" data-act="play" aria-label="Озвучить">🔊</button></div>'+(rv.mode==='ls'?'<div class="sub">'+md(w.tr)+'</div>':'');
     if(w.ipa||w.pron) h+='<div class="sub" lang="de">'+esc([w.ipa,w.pron].filter(Boolean).join(' — '))+'</div>';
     if(w.def) h+='<div class="rt" lang="de">'+esc(w.def)+'</div>';
     if(w.conj) h+=richView(w.conj,true);
@@ -750,6 +779,75 @@ async function undo(){
   if(u.key!=null) await dbDel('log',u.key).catch(()=>{});
   S.undo=null; if(S.rv){S.rv.shown=false;S.rv.cur=null;}
   render();toast('Оценка отменена');
+}
+
+/* ---------- тренировка: карточки как в Word Theme Pro ---------- */
+const curItem=()=>S.rvTab==='train'?(S.tr&&S.tr.run&&S.tr.run.q[0]):(S.rv&&S.rv.cur);
+function rvSwitch(){
+  const m=S.rvTab||'sched';
+  return '<div class="seg" style="grid-template-columns:repeat(2,1fr);margin-bottom:10px"><button data-act="rvTab" data-m="sched"'+(m==='sched'?' class="on"':'')+'>По расписанию</button><button data-act="rvTab" data-m="train"'+(m==='train'?' class="on"':'')+'>Тренировка</button></div>';
+}
+function shuffle(a){a=a.slice();for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));const x=a[i];a[i]=a[j];a[j]=x;}return a;}
+function trState(){
+  if(!S.tr){
+    let f={};try{f=JSON.parse(localStorage.getItem('wt_train')||'{}')||{};}catch(e){}
+    S.tr={themes:Array.isArray(f.themes)?f.themes:[],tag:f.tag||'',n:f.n||30,side:f.side||'wt',run:null};
+  }
+  return S.tr;
+}
+function trSave(){const t=trState();try{localStorage.setItem('wt_train',JSON.stringify({themes:t.themes,tag:t.tag,n:t.n,side:t.side}));}catch(e){}}
+function trPool(){
+  const t=trState();
+  return eligible('').filter(w=>(!t.themes.length||t.themes.includes(w.theme))&&(!t.tag||splitTags(w.tags).includes(t.tag)));
+}
+const trGoText=()=>{const t=trState();return 'Начать · слов: '+Math.min(trPool().length,t.n);};
+function newRun(q){return {q,total:q.length,known:0,again:0,missed:new Set(),shown:false,played:''};}
+function trStartRun(){
+  const t=trState();
+  t.run=newRun(shuffle(trPool()).slice(0,Math.max(1,t.n|0)).map(w=>({w,dir:t.side==='mix'?(Math.random()<.5?'wt':'tw'):t.side})));
+}
+function renderTrain(){const t=trState();if(t.run) renderTrainRun(); else renderTrainSetup();}
+function renderTrainSetup(){
+  const t=trState(),words=realWords();
+  const themes=[...new Set(words.map(w=>w.theme))].filter(Boolean),tags=[...new Set(words.flatMap(w=>splitTags(w.tags)))];
+  let h=rvSwitch()+'<div class="card"><h3>Тема</h3>';
+  h+=themes.length?themes.map(x=>'<label class="chk"><input type="checkbox" data-tf="theme" value="'+esc(x)+'"'+(t.themes.includes(x)?' checked':'')+'> '+esc(x)+'</label>').join(''):'<div class="hint">Тем пока нет</div>';
+  h+='<div class="hint">Ничего не отмечено — берутся все темы</div></div>';
+  h+='<div class="card"><label class="lab">Тег</label><select data-tf="tag"><option value="">Все теги</option>'+tags.map(x=>'<option'+(x===t.tag?' selected':'')+' value="'+esc(x)+'">'+esc(x)+'</option>').join('')+'</select>'+
+    '<label class="lab">Сколько слов (случайно)</label><input type="number" inputmode="numeric" min="1" max="500" data-tf="n" value="'+t.n+'">'+
+    '<label class="lab">Что показывать первым</label><select data-tf="side"><option value="wt"'+(t.side==='wt'?' selected':'')+'>Сначала слово</option><option value="tw"'+(t.side==='tw'?' selected':'')+'>Сначала перевод</option><option value="mix"'+(t.side==='mix'?' selected':'')+'>Вперемешку</option></select></div>';
+  h+='<div class="bar"><button class="pri" id="trGo" data-act="trStart" style="width:100%">'+trGoText()+'</button></div>';
+  $('#view').innerHTML=h;
+}
+function backHtml(w,wt){
+  let h='<div class="back">';
+  h+=wt?'<div class="big">'+md(w.tr)+'</div>':'<div class="big wd" lang="de"><span>'+md(w.word)+'</span><button class="ic sp" data-act="play" aria-label="Озвучить">🔊</button></div>';
+  if(w.ipa||w.pron) h+='<div class="sub" lang="de">'+esc([w.ipa,w.pron].filter(Boolean).join(' — '))+'</div>';
+  if(w.def) h+='<div class="rt" lang="de">'+esc(w.def)+'</div>';
+  if(w.conj) h+=richView(w.conj,true);
+  if(w.decl) h+=richView(w.decl);
+  if(w.ex) h+=exView(w.ex);
+  return h+'</div>';
+}
+function renderTrainRun(){
+  const t=S.tr,r=t.run,view=$('#view');
+  let h=rvSwitch();
+  if(!r.q.length){
+    const first=r.total-r.missed.size;
+    h+='<div class="card empty">🎉 Готово!<br><span class="hint">С первого раза: '+first+' из '+r.total+'</span></div><div class="bar">'+
+      (r.missed.size?'<button class="pri" data-act="trMissed">Повторить ошибки ('+r.missed.size+')</button>':'')+
+      '<button data-act="trStart">Новая выборка</button><button data-act="trSetup">Настройки</button></div>';
+    view.innerHTML=h;return;
+  }
+  const it=r.q[0],w=it.w,wt=it.dir==='wt';
+  h+='<div class="cnt"><span class="n">Осталось <b>'+r.q.length+'</b></span><span class="r">Знаю <b>'+r.known+'</b></span><span class="l">Ещё раз <b>'+r.again+'</b></span></div><div class="card">';
+  h+=wt?'<div class="front wd'+(isSent(w)?' sent':'')+'" lang="de"><span>'+md(w.word)+'</span><button class="ic sp" data-act="play" aria-label="Озвучить">🔊</button></div>':'<div class="front">'+md(w.tr)+'</div>';
+  if(!r.shown) h+='<div class="bar"><button class="pri" data-act="trShow">Показать ответ</button></div>';
+  else h+=backHtml(w,wt)+'<div class="grades" style="grid-template-columns:repeat(2,1fr)"><button class="g1" data-act="trAns" data-k="0">Ещё раз</button><button class="g3" data-act="trAns" data-k="1">Знаю</button></div>';
+  h+='</div><div class="bar fix"><button class="sm" data-act="trSetup">⚙️ Настройки</button><button class="sm" data-act="rvEdit" style="margin-left:auto">✏️ Править</button></div>';
+  view.innerHTML=h;
+  const ak=w.id+'|'+it.dir+'|'+r.q.length+'|'+(r.shown?1:0);
+  if(localStorage.getItem('wt_auto')==='1'&&(wt?!r.shown:r.shown)&&r.played!==ak){r.played=ak;speak(w);}
 }
 
 /* ---------- ещё ---------- */
@@ -947,7 +1045,7 @@ function progress(title){
 
 /* ---- Gemini: автозаполнение ---- */
 const CYR=/[а-яёіїєґ]/i;
-const isSent=w=>{if(w&&w.sent)return true;const t=str(w&&w.word).trim();return t.split(/\s+/).length>=4||/[.!?…]$/.test(t);};
+const isSent=w=>{if(w&&w.sent)return true;const t=plain(w&&w.word).trim(),n=t.split(/\s+/).length;return n>=4||(n>=3&&/[.!?…]$/.test(t));};
 async function fillSentences(list){
   const d=await callApi('gemini',{a:'sent',items:list.map(w=>({text:w.word,tr:w.tr}))});
   list.forEach((w,k)=>{
@@ -1054,7 +1152,7 @@ const voiceCfg=()=>({voice:localStorage.getItem('wt_voice')||'',key:+(localStora
 async function synth(w){
   const c=voiceCfg();
   if(!c.voice){const e=new Error('сначала выберите голос: Ещё → Озвучка');e.code='no_voice';throw e;}
-  const text=str(w.word).trim();
+  const text=plain(w.word).trim();
   if(!text) throw new Error('пустое слово');
   const r=await callApi('eleven',elReq(text),{buf:true});
   const rec={id:w.id,buf:r.buf,text,voice:c.voice,ts:Date.now()};
@@ -1064,7 +1162,7 @@ async function synth(w){
 }
 async function audioFor(w,gen){
   const r=await audioGet(w.id);
-  if(r&&r.text===str(w.word).trim()) return r;
+  if(r&&r.text===plain(w.word).trim()) return r;
   return gen?synth(w):null;
 }
 let curAudio=null;
@@ -1082,7 +1180,7 @@ function ttsFallback(text){
 }
 async function speak(w){
   try{const r=await audioFor(w,true);if(r)playBuf(r.buf);}
-  catch(e){const fb=ttsFallback(w.word);toast('Озвучка: '+e.message+(fb?' — играю голос телефона':''));}
+  catch(e){const fb=ttsFallback(plain(w.word));toast('Озвучка: '+e.message+(fb?' — играю голос телефона':''));}
 }
 async function speakText(key,text){
   try{
@@ -1107,11 +1205,11 @@ async function genAll(force){
   const list=[];
   for(const w of realWords()){
     if(!str(w.word).trim()) continue;
-    if(!force){const r=await audioGet(w.id);if(r&&r.text===str(w.word).trim()) continue;}
+    if(!force){const r=await audioGet(w.id);if(r&&r.text===plain(w.word).trim()) continue;}
     list.push(w);
   }
   if(!list.length){toast('Все слова уже озвучены');return;}
-  const chars=list.reduce((n,w)=>n+elReq(w.word).text.length,0);
+  const chars=list.reduce((n,w)=>n+elReq(plain(w.word)).text.length,0);
   const verb=force?'Переозвучить':'Озвучить';
   const ok=await ask(verb+' слов: '+list.length+' (~'+nf(chars)+' символов ElevenLabs)?',[{t:verb,v:true,cls:'pri'},{t:'Отмена',v:false}]);
   if(!ok) return;
@@ -1307,10 +1405,10 @@ const ACT={
   cAdd(t){const b=S.ed.rich[t.dataset.rk].blocks[+t.dataset.b],n=Math.max(2,...b.rows.map(r=>r.length))+1;b.rows.forEach(r=>{while(r.length<n)r.push('');});commitRich(t.dataset.rk);drawRich(t.dataset.rk);},
   cDel(t){const b=S.ed.rich[t.dataset.rk].blocks[+t.dataset.b],n=Math.max(2,...b.rows.map(r=>r.length));if(n<=1)return;b.rows.forEach(r=>{r.length=Math.min(r.length,n-1);});commitRich(t.dataset.rk);drawRich(t.dataset.rk);},
   show(){S.rv.shown=true;renderReview();},
-  check(){const rv=S.rv,a=$('#ans');rv.typed=a?a.value:'';rv.res=checkAnswer(rv.typed,rv.cur.w.word);rv.shown=true;renderReview();},
+  check(){const rv=S.rv,a=$('#ans');rv.typed=a?a.value:'';rv.res=checkAnswer(rv.typed,plain(rv.cur.w.word));rv.shown=true;renderReview();},
   grade(t){grade(+t.dataset.g);},
   undo(){undo();},
-  rvEdit(){if(S.rv&&S.rv.cur)openEditor(S.rv.cur.w.id);},
+  rvEdit(){const it=curItem();if(it)openEditor(it.w.id);},
   batch(){
     S.bSent=false;
     const themes=[...new Set(S.words.map(x=>x.theme))].filter(Boolean),subs=[...new Set(realWords().map(x=>x.sub))].filter(Boolean);
@@ -1384,8 +1482,24 @@ const ACT={
     }catch(e){t.textContent='✨';t.disabled=false;toast('Ошибка: '+e.message);}
   },
   edPlay(){if(S.ed&&str(S.ed.w.word).trim())speak(S.ed.w);},
-  play(){const it=S.rv&&S.rv.cur;if(it)speak(it.w);},
-  playConj(){const it=S.rv&&S.rv.cur;if(it)speakText('c:'+it.w.id,parseRich(it.w.conj).text);},
+  play(){const it=curItem();if(it)speak(it.w);},
+  playConj(){const it=curItem();if(it)speakText('c:'+it.w.id,parseRich(it.w.conj).text);},
+  playEx(t){const it=curItem();if(!it)return;const x=exItems(it.w.ex)[+t.dataset.i];if(x)speakText('ex:'+it.w.id+':'+t.dataset.i,plain(x.de));},
+  rvTab(t){S.rvTab=t.dataset.m;localStorage.setItem('wt_rtab',S.rvTab);if(S.rv)S.rv.cur=null;renderReview();},
+  trStart(){if(!trPool().length){toast('Нет слов по выбранным фильтрам');return;}trStartRun();renderReview();},
+  trSetup(){trState().run=null;renderReview();},
+  trShow(){S.tr.run.shown=true;renderReview();},
+  trAns(t){
+    const r=S.tr.run,it=r.q.shift();if(!it)return;
+    if(t.dataset.k==='1') r.known++;
+    else{r.again++;r.missed.add(it.w.id);r.q.splice(Math.min(r.q.length,4),0,it);}
+    r.shown=false;renderReview();
+  },
+  trMissed(){
+    const t=trState(),r=t.run,ids=r.missed;
+    const list=shuffle(realWords().filter(w=>ids.has(w.id)));
+    t.run=newRun(list.map(w=>({w,dir:t.side==='mix'?(Math.random()<.5?'wt':'tw'):t.side})));renderReview();
+  },
   vOpen(){S.vopen=!S.vopen;pvA.pause();renderEl();},
   vPick(t){
     const v=(S.voices||[])[+t.dataset.i];if(!v) return;
@@ -1463,6 +1577,14 @@ document.addEventListener('change',e=>{
   const t=e.target;
   if(settingsChange(t)) return;
   if(t.dataset.f){S[t.dataset.f]=t.value;if(t.dataset.f==='fTheme'){S.fSub='';}renderList();}
+  else if(t.dataset.tf){
+    const tr=trState(),k=t.dataset.tf;
+    if(k==='theme'){const i=tr.themes.indexOf(t.value);if(t.checked&&i<0)tr.themes.push(t.value);else if(!t.checked&&i>=0)tr.themes.splice(i,1);}
+    else if(k==='tag') tr.tag=t.value;
+    else if(k==='n') tr.n=Math.max(1,Math.min(500,parseInt(t.value,10)||30));
+    else if(k==='side') tr.side=t.value;
+    trSave();const g=$('#trGo');if(g) g.textContent=trGoText();
+  }
   else if(t.dataset.rf){const rv=rvState();rv[t.dataset.rf]=t.value;localStorage.setItem(t.dataset.rf==='mode'?'wt_mode':'wt_rtheme',t.value);rv.cur=null;rv.shown=false;renderReview();updBadge();}
 });
 document.addEventListener('keydown',e=>{
