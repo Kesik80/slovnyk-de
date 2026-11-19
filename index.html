@@ -500,7 +500,7 @@ function download(blob,name){
 const sortedWords=()=>S.words.slice().sort((a,b)=>a.ord-b.ord);
 const realWords=()=>S.words.filter(w=>w.kind!=='h');
 const splitTags=t=>str(t).split(/[,;]+/).map(x=>x.trim()).filter(Boolean);
-function keyOf(w){return w.kind==='h'?'h\u0001'+str(w.theme).trim().toLowerCase():[w.theme,w.sub,w.word].map(x=>str(x).trim().toLowerCase()).join('\u0001');}
+function keyOf(w){return w.kind==='h'?'h\u0001'+str(w.theme).trim().toLowerCase():[w.theme,w.sub,plain(w.word)].map(x=>str(x).trim().toLowerCase()).join('\u0001');}
 function newOrd(theme,sub){
   const ws=sortedWords(); let found=null;
   ws.forEach(w=>{if(w.kind!=='h'&&w.theme===theme&&w.sub===sub) found=w.ord;});
@@ -563,7 +563,7 @@ function renderList(){
     if(!col) g.subs.forEach(s=>{
       const sk='s:'+g.theme+'\u0001'+s.sub, sc=!filt&&S.col.has(sk);
       if(s.sub) h+='<div class="sg" data-act="tg" data-k="'+esc(sk)+'"><span class="ar" style="display:inline-block;transform:rotate('+(sc?-90:0)+'deg)">▾</span>'+esc(s.sub)+' · '+s.items.length+'</div>';
-      if(!sc) s.items.forEach(w=>{h+='<div class="row" data-act="open" data-id="'+w.id+'"><span class="dot '+stClass(w)+'"></span><span class="w" lang="de">'+md(w.word)+'</span><span class="t">'+md(w.tr)+'</span></div>';});
+      if(!sc) s.items.forEach(w=>{h+='<div class="row" data-act="open" data-id="'+w.id+'"><span class="dot '+stClass(w)+'"></span><span class="w" lang="de">'+md(w.word)+'</span><span class="t">'+md(w.tr)+'</span><button class="ic sp" data-act="rowPlay" data-id="'+w.id+'" aria-label="Озвучить">🔊</button></div>';});
     });
     h+='</div>';
   });
@@ -1383,6 +1383,7 @@ const ACT={
   colAll(){S.words.forEach(w=>{S.col.add('t:'+w.theme);});localStorage.setItem('wt_col',JSON.stringify([...S.col]));render();},
   expAll(){S.col.clear();localStorage.setItem('wt_col','[]');render();},
   open(t){openEditor(t.dataset.id);},
+  rowPlay(t){const w=S.words.find(x=>String(x.id)===t.dataset.id);if(w&&str(w.word).trim())speak(w);},
   add(){openEditor(null);},
   edClose(){closeEditor();},
   async edDel(){const w=S.ed.w;const ok=await ask('Удалить «'+w.word+'»?',[{t:'Удалить',v:true,cls:'dng'},{t:'Отмена',v:false}]);if(!ok)return;
